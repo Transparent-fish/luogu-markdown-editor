@@ -46,6 +46,8 @@ const safeStorage = {
       this.docName = '洛谷题解_未命名.md';
       // Scroll sync defaults to on; a stored '0' turns it off.
       this.scrollSyncEnabled = safeStorage.getItem('luogu_editor_scroll_sync') !== '0';
+      // Typography lint display defaults to on; a stored '0' hides it.
+      this.lintDisplayEnabled = safeStorage.getItem('luogu_editor_lint_display') !== '0';
       this.currentMode = 'split'; // 'split' | 'editor-only' | 'preview-only' | 'typora'
       this.typora = null;         // lazily constructed once the DOM is bound
       this.currentTheme = 'luogu';
@@ -103,6 +105,7 @@ const safeStorage = {
       this.setTheme(savedTheme);
       // Reflect the stored scroll-sync preference on the toolbar button.
       this.toggleScrollSync(this.scrollSyncEnabled);
+      this.applyLintDisplay();
 
       if (savedContent && savedContent.trim().length > 0) {
         this.resetCalloutToggles();
@@ -181,6 +184,13 @@ const safeStorage = {
       this.textarea.addEventListener('scroll', () => {
         // The gutter must follow even our own writes, so update it before bailing out.
         this.updateGutterScroll();
+        // The highlight layer is a separate element, so it has to be scrolled in
+        // lockstep or the boxes slide away from their glyphs.
+        const hl = document.getElementById('findHighlights');
+        if (hl) {
+          hl.scrollTop = this.textarea.scrollTop;
+          hl.scrollLeft = this.textarea.scrollLeft;
+        }
         if (this.isEchoScroll(this.textarea)) return;
         this.syncScroll('editor');
       });
@@ -192,6 +202,56 @@ const safeStorage = {
 
       // Keyboard shortcuts
       this.textarea.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+      // Find bar: live search as you type, Enter / Shift+Enter to step, Esc to close.
+      const findInput = document.getElementById('findInput');
+      const replaceInput = document.getElementById('replaceInput');
+      // Undo/redo must keep working while the caret sits in the find or replace box.
+      // Those are ordinary <input>s, so the browser would apply *their* own undo
+      // stack (usually empty) and the document edit would appear un-undoable — the
+      // exact symptom of "Ctrl+Z cannot take back my replacements", since after a
+      // replace the focus is still in the replace box.
+      const docUndoKeys = (e) => {
+        if (!(e.ctrlKey || e.metaKey)) return false;
+        if (e.key === 'z' || e.key === 'Z') {
+          e.preventDefault();
+          if (e.shiftKey) this.redo(); else this.undo();
+          return true;
+        }
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          this.redo();
+          return true;
+        }
+        return false;
+      };
+
+      if (findInput) {
+        findInput.addEventListener('input', () => this.runFind());
+        findInput.addEventListener('keydown', (e) => {
+          if (docUndoKeys(e)) return;
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (e.shiftKey) this.findPrev(); else this.findNext();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            this.closeFind();
+          }
+        });
+      }
+      if (replaceInput) {
+        replaceInput.addEventListener('keydown', (e) => {
+          if (docUndoKeys(e)) return;
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            // Ctrl+Enter replaces everything; plain Enter replaces just this one.
+            if (e.ctrlKey || e.metaKey) this.replaceAll(); else this.replaceOne();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            this.closeFind();
+          }
+        });
+      }
 
       // Doc name input
       if (this.docNameInput) {
@@ -683,6 +743,19 @@ const safeStorage = {
       const isCtrl = e.ctrlKey || e.metaKey;
 
       if (isCtrl) {
+        // Ctrl+F is Luogu's documented search key; Ctrl+H adds replace.
+        if (e.key === 'f' || e.key === 'F') {
+          e.preventDefault();
+          this.openFind(false);
+          return;
+        }
+        // Shift must be excluded: Ctrl+Shift+H is Luogu's horizontal-rule key and is
+        // handled further down. Without this guard, replace swallowed it.
+        if ((e.key === 'h' || e.key === 'H') && !e.shiftKey) {
+          e.preventDefault();
+          this.openFind(true);
+          return;
+        }
         if (e.key === 's' || e.key === 'S') {
           e.preventDefault();
           // Fire-and-forget: it is async now (may await a file picker).
@@ -948,11 +1021,19 @@ const safeStorage = {
       }
 
       this.textarea.setSelectionRange(pos, pos);
-      this.textarea.focus();
+      // Undo triggered from the find/replace boxes must not steal the caret out of
+      // them: the reader is mid-task there and would have to click back for every
+      // single undo. Only grab focus when it is not already in the find bar.
+      const inFindBar = document.activeElement
+        && document.activeElement.closest
+        && document.activeElement.closest('#findBar');
+      if (!inFindBar) this.textarea.focus();
       this.scrollCaretIntoView();
       this.render();
       this.updateLineNumbers();
       this.autoSave();
+      // Matches shifted with the text, so the painted boxes are stale.
+      if (this.isFindOpen && this.isFindOpen()) this.runFind();
     }
 
     // Ensure the caret's line is visible after a programmatic value change.
@@ -1193,6 +1274,10 @@ const safeStorage = {
       if (this._tailPad !== wantTa) {
         this._tailPad = wantTa;
         ta.style.paddingBottom = `${wantTa}px`;
+        // The find highlight layer mirrors the textarea's box; if its padding does
+        // not follow, every painted box drifts from the glyph it belongs to.
+        const hl = document.getElementById('findHighlights');
+        if (hl) hl.style.paddingBottom = `${wantTa}px`;
       }
       if (this._previewTailPad !== wantPv) {
         this._previewTailPad = wantPv;
@@ -1333,10 +1418,20 @@ const safeStorage = {
         statsEl.innerText = `${lines} 行 | ${words} 字 | ${chars} 字符 | ${formulas} 公式 | 预估阅读 ${readTime} 分钟`;
       }
 
-      // Check with linter
-      const lintResult = this.linter.lint(text);
+      // Check with linter.
+      //
+      // Skipped entirely when the display is off, not merely hidden: lint() runs on
+      // every (debounced) render and costs ~50ms on a 400KB document, so paying for
+      // a result nobody will see would tax exactly the long solutions where typing
+      // latency already hurts most.
       const scoreBadge = document.getElementById('linterScoreBadge');
+      if (!this.lintDisplayEnabled) {
+        if (scoreBadge) scoreBadge.hidden = true;
+        return;
+      }
+      const lintResult = this.linter.lint(text);
       if (scoreBadge) {
+        scoreBadge.hidden = false;
         scoreBadge.innerText = `排版评分: ${lintResult.score}分`;
         scoreBadge.className = `status-score-badge ${lintResult.score >= 90 ? 'status-score-good' : 'status-score-warn'}`;
       }
@@ -1381,6 +1476,264 @@ const safeStorage = {
       this.autoSave();
     }
 
+    // ---- Find & replace ------------------------------------------------------
+    //
+    // Operates on the Markdown source in the textarea, not on the rendered preview:
+    // that is what the author actually edits, and it keeps "replace" a plain string
+    // edit instead of a DOM rewrite that would have to be mapped back to source.
+
+    openFind(withReplace) {
+      const bar = document.getElementById('findBar');
+      const input = document.getElementById('findInput');
+      if (!bar || !input) return;
+      bar.hidden = false;
+      // Seed the box with the current selection, the way most editors do.
+      const sel = this.textarea
+        ? this.textarea.value.slice(this.textarea.selectionStart, this.textarea.selectionEnd)
+        : '';
+      if (sel && !sel.includes('\n')) input.value = sel;
+      this.runFind();
+      const focusEl = withReplace ? document.getElementById('replaceInput') : input;
+      if (focusEl) { focusEl.focus(); focusEl.select(); }
+    }
+
+    closeFind() {
+      this._disarmReplaceAll();
+      const bar = document.getElementById('findBar');
+      if (bar) bar.hidden = true;
+      this._findMatches = null;
+      const layer = document.getElementById('findHighlights');
+      if (layer) layer.textContent = '';
+      if (this.textarea) this.textarea.focus();
+    }
+
+    isFindOpen() {
+      const bar = document.getElementById('findBar');
+      return !!bar && !bar.hidden;
+    }
+
+    /** Build the search regex from the query and the option checkboxes, or null. */
+    _findRegex() {
+      const q = (document.getElementById('findInput') || {}).value || '';
+      const err = document.getElementById('findError');
+      if (err) err.textContent = '';
+      if (!q) return null;
+
+      const useRe = !!(document.getElementById('findRegex') || {}).checked;
+      const caseSensitive = !!(document.getElementById('findCase') || {}).checked;
+      const wholeWord = !!(document.getElementById('findWord') || {}).checked;
+
+      // A literal query must have every metacharacter escaped, otherwise searching
+      // for "$x^2$" would be interpreted as a pattern and match nothing (or throw).
+      let body = useRe ? q : q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // \b is ASCII-only, so it never fires between CJK characters; spell the
+      // boundary out to include the CJK range.
+      if (wholeWord) body = '(?<![\\w\\u4e00-\\u9fa5])(?:' + body + ')(?![\\w\\u4e00-\\u9fa5])';
+
+      try {
+        return new RegExp(body, caseSensitive ? 'gm' : 'gim');
+      } catch (e) {
+        if (err) err.textContent = '正则无效：' + e.message;
+        return null;
+      }
+    }
+
+    /** Recompute all matches and reveal the current one. */
+    runFind(keepIndex) {
+      if (!this.isFindOpen() || !this.textarea) return;
+      // The pending confirmation belongs to the previous query; a new search must
+      // not be able to inherit someone else's "yes".
+      if (this._replaceAllArmed) this._disarmReplaceAll();
+      const re = this._findRegex();
+      const countEl = document.getElementById('findCount');
+      const text = this.textarea.value;
+      const matches = [];
+
+      if (re) {
+        let m;
+        let guard = 0;
+        while ((m = re.exec(text)) !== null) {
+          matches.push({ start: m.index, end: m.index + m[0].length });
+          // A pattern that can match the empty string (e.g. `a*`) never advances
+          // lastIndex by itself and would spin forever.
+          if (m[0].length === 0) re.lastIndex++;
+          if (++guard > 100000) break;
+        }
+      }
+
+      this._findMatches = matches;
+      if (!keepIndex || this._findIndex == null || this._findIndex >= matches.length) {
+        // Start from the first match at or after the caret, so opening the bar
+        // continues from where the author is rather than from the top.
+        const caret = this.textarea.selectionStart;
+        let at = -1;
+        for (let i = 0; i < matches.length; i++) {
+          if (matches[i].start >= caret) { at = i; break; }
+        }
+        this._findIndex = matches.length ? (at === -1 ? 0 : at) : -1;
+      }
+      if (countEl) {
+        countEl.textContent = matches.length
+          ? (this._findIndex + 1) + '/' + matches.length : '0/0';
+      }
+      this._paintHighlights();
+      if (matches.length) this._revealMatch();
+    }
+
+    /**
+     * Paint every match behind the textarea, marking the current one.
+     *
+     * A <textarea> cannot hold markup, so the matches are drawn on a mirror layer
+     * with identical metrics sitting underneath. Only the boxes are visible: the
+     * mirror's own text is transparent, and the real glyphs come from the textarea
+     * on top.
+     */
+    _paintHighlights() {
+      const layer = document.getElementById('findHighlights');
+      if (!layer || !this.textarea) return;
+      const matches = (this.isFindOpen() && this._findMatches) || [];
+      if (!matches.length) {
+        if (layer.firstChild) layer.textContent = '';
+        layer.scrollTop = this.textarea.scrollTop;
+        return;
+      }
+
+      const text = this.textarea.value;
+      const frag = document.createDocumentFragment();
+      let at = 0;
+      for (let i = 0; i < matches.length; i++) {
+        const m = matches[i];
+        if (m.start > at) frag.appendChild(document.createTextNode(text.slice(at, m.start)));
+        const mark = document.createElement('mark');
+        if (i === this._findIndex) mark.className = 'is-current';
+        // A zero-width match would paint nothing; give it something to show.
+        mark.textContent = m.end > m.start ? text.slice(m.start, m.end) : '\u200b';
+        frag.appendChild(mark);
+        at = m.end;
+      }
+      // Trailing newline keeps the last line's height so the layer scrolls in step.
+      frag.appendChild(document.createTextNode(text.slice(at) + '\n'));
+      layer.textContent = '';
+      layer.appendChild(frag);
+      layer.scrollTop = this.textarea.scrollTop;
+      layer.scrollLeft = this.textarea.scrollLeft;
+    }
+
+    _revealMatch() {
+      const m = (this._findMatches || [])[this._findIndex];
+      if (!m || !this.textarea) return;
+      this.textarea.setSelectionRange(m.start, m.end);
+      // Scrolling is manual: setSelectionRange does not move a textarea that is
+      // already scrolled somewhere else.
+      const line = this.textarea.value.slice(0, m.start).split('\n').length - 1;
+      const lineH = parseFloat(getComputedStyle(this.textarea).lineHeight) || 21;
+      const target = line * lineH;
+      const view = this.textarea.clientHeight;
+      if (target < this.textarea.scrollTop
+        || target > this.textarea.scrollTop + view - lineH * 2) {
+        this.textarea.scrollTop = Math.max(0, target - view / 2);
+      }
+      this.updateGutterScroll();
+    }
+
+    _stepFind(delta) {
+      if (!this.isFindOpen()) return;
+      const n = (this._findMatches || []).length;
+      if (!n) return;
+      this._findIndex = ((this._findIndex + delta) % n + n) % n;   // wraps both ways
+      const countEl = document.getElementById('findCount');
+      if (countEl) countEl.textContent = (this._findIndex + 1) + '/' + n;
+      this._paintHighlights();
+      this._revealMatch();
+    }
+
+    findNext() { this._stepFind(1); }
+    findPrev() { this._stepFind(-1); }
+
+    /** Put the "replace all" button back to its resting state. */
+    _disarmReplaceAll() {
+      clearTimeout(this._replaceAllTimer);
+      this._replaceAllArmed = false;
+      const btn = document.getElementById('replaceAllBtn');
+      if (btn) {
+        btn.classList.remove('is-armed');
+        btn.textContent = '全部';
+      }
+    }
+
+    /** Replacement text, honouring $1..$9 group references in regex mode. */
+    _expandReplacement(matchText) {
+      const rep = (document.getElementById('replaceInput') || {}).value || '';
+      if (!(document.getElementById('findRegex') || {}).checked) return rep;
+      const re = this._findRegex();
+      if (!re) return rep;
+      // Re-run on this match alone so the capture groups belong to it.
+      const one = new RegExp(re.source, re.flags.replace('g', ''));
+      const m = one.exec(matchText);
+      if (!m) return rep;
+      return rep.replace(/\$(\d)/g, (s, d) => (m[+d] !== undefined ? m[+d] : s));
+    }
+
+    replaceOne() {
+      if (!this.isFindOpen() || !this.textarea) return;
+      const m = (this._findMatches || [])[this._findIndex];
+      if (!m) return;
+      const text = this.textarea.value;
+      const rep = this._expandReplacement(text.slice(m.start, m.end));
+      // setContent(), not textarea.value: it pushes an undo entry (so Ctrl+Z reverts
+      // the replacement), re-renders the preview and schedules autosave.
+      this.setContent(text.slice(0, m.start) + rep + text.slice(m.end));
+      const caret = m.start + rep.length;
+      this.textarea.setSelectionRange(caret, caret);
+      this._findIndex = null;
+      this.runFind();
+    }
+
+    /**
+     * Replace every match — but never on a single click.
+     *
+     * "Replace all" rewrites the whole document in one irreversible-looking step, so
+     * it asks first and names the count. The confirmation is a second click on the
+     * button itself (armed for a few seconds) rather than a modal, so the matches
+     * stay visible while deciding; `force` skips it for programmatic callers.
+     */
+    replaceAll(force) {
+      if (!this.isFindOpen() || !this.textarea) return;
+      const matches = this._findMatches || [];
+      if (!matches.length) return;
+
+      const btn = document.getElementById('replaceAllBtn');
+      if (!force && !this._replaceAllArmed) {
+        this._replaceAllArmed = true;
+        if (btn) {
+          btn.classList.add('is-armed');
+          btn.textContent = `确认替换 ${matches.length} 处？`;
+        }
+        if (this.showToast) {
+          this.showToast(`将替换 ${matches.length} 处，请再点一次确认`, 'info');
+        }
+        clearTimeout(this._replaceAllTimer);
+        this._replaceAllTimer = setTimeout(() => this._disarmReplaceAll(), 4000);
+        return;
+      }
+      this._disarmReplaceAll();
+
+      const text = this.textarea.value;
+      // Walk backwards so each splice leaves the earlier offsets valid.
+      let out = text;
+      for (let i = matches.length - 1; i >= 0; i--) {
+        const m = matches[i];
+        out = out.slice(0, m.start)
+          + this._expandReplacement(text.slice(m.start, m.end))
+          + out.slice(m.end);
+      }
+      const n = matches.length;
+      this.setContent(out);
+      this._findIndex = null;
+      this.runFind();
+      if (this.showToast) this.showToast('已替换 ' + n + ' 处', 'success');
+    }
+
     /**
      * Forget hand-set fold states. Called when the document is replaced wholesale:
      * line N in the new text is a different box, or none at all. In-place edits
@@ -1389,6 +1742,45 @@ const safeStorage = {
      */
     resetCalloutToggles() {
       if (this._calloutToggles) this._calloutToggles.clear();
+    }
+
+    /** Sync the lint UI to the stored preference without announcing it. */
+    applyLintDisplay() {
+      const mark = document.getElementById('lintToggleMark');
+      if (mark) mark.textContent = this.lintDisplayEnabled ? '✅' : '⬜';
+      const badge = document.getElementById('linterScoreBadge');
+      if (badge) badge.hidden = !this.lintDisplayEnabled;
+    }
+
+    /**
+     * Show or hide the typography lint readout.
+     *
+     * The switch lives in the settings menu rather than on the badge itself: hiding
+     * a control from the control you just hid would leave no way back.
+     */
+    toggleLintDisplay(force) {
+      this.lintDisplayEnabled = (force === undefined) ? !this.lintDisplayEnabled : !!force;
+      safeStorage.setItem('luogu_editor_lint_display', this.lintDisplayEnabled ? '1' : '0');
+
+      const mark = document.getElementById('lintToggleMark');
+      if (mark) mark.textContent = this.lintDisplayEnabled ? '✅' : '⬜';
+      const item = document.getElementById('lintToggleItem');
+      if (item) item.setAttribute('aria-pressed', this.lintDisplayEnabled ? 'true' : 'false');
+
+      const badge = document.getElementById('linterScoreBadge');
+      if (badge) badge.hidden = !this.lintDisplayEnabled;
+
+      // Turning it off while the report is open would leave a panel on screen that
+      // the setting says should not exist.
+      if (!this.lintDisplayEnabled) this.closeModal('linterModal');
+      // Turning it back on needs a fresh score: the document moved on while the
+      // linter was not running.
+      if (this.lintDisplayEnabled) this.updateStats(this.getContent());
+
+      if (this.showToast) {
+        this.showToast(`排版问题显示已${this.lintDisplayEnabled ? '开启' : '关闭'}`, 'info');
+      }
+      return this.lintDisplayEnabled;
     }
 
     // Theme switcher

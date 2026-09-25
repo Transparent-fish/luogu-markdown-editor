@@ -71,6 +71,12 @@
     return h.toString(36);
   }
 
+  // A line that opens a new block, so it cannot lazily continue a list item.
+  const BLOCK_START_RE =
+    /^\s*(?:#{1,6}\s|>|[`~]{3,}|\||:{2,}|(?:[*+-]|\d+[.)])\s|(?:\*\s*){3,}$|(?:-\s*){3,}$|(?:_\s*){3,}$)/;
+  // A line inside a list item that needs the block parser rather than inline rendering.
+  const BLOCK_IN_ITEM_RE = /^\s*(?:\||[`~]{3,}|>|#{1,6}\s|:{2,})/;
+
   const _katexRenderCache = new Map();
   const _katexRenderCacheMax = 4000;
   /**
@@ -265,6 +271,56 @@
       return html;
     }
 
+    /**
+     * Resolve the destination (and optional title) of a link reference definition
+     * whose label line has already been matched.
+     *
+     * `sameLine` is whatever followed the colon on the label's own line. When that is
+     * empty the destination is taken from the next line; the title may then sit on the
+     * line after it. Returns null when this is not a definition at all, in which case
+     * the caller must keep the line as ordinary text.
+     */
+    parseLinkRefTail(lines, labelIndex, sameLine) {
+      let rest = (sameLine || '').trim();
+      let last = labelIndex;
+
+      if (rest === '') {
+        const next = lines[labelIndex + 1];
+        // A blank line (or end of input) after the colon means there is no
+        // destination, so the label line is just text.
+        if (next === undefined || /^\s*$/.test(next)) return null;
+        // An indented code block or a fence is never a continuation.
+        if (/^(?: {4}|\t)/.test(next) || /^\s*([`~]{3,})/.test(next)) return null;
+        rest = next.trim();
+        last = labelIndex + 1;
+      }
+
+      // Destination is a single bare token; anything after it on the same line has to
+      // be the title, otherwise the whole construct is not a definition.
+      const m = rest.match(/^(\S+)(?:[ \t]+(.*))?$/);
+      if (!m) return null;
+      const url = m[1];
+      let title = '';
+
+      if (m[2] !== undefined && m[2] !== '') {
+        const t = m[2].trim().match(/^"(.*)"$|^'(.*)'$|^\((.*)\)$/);
+        if (!t) return null;                    // trailing junk -> not a definition
+        title = (t[1] ?? t[2] ?? t[3] ?? '').trim();
+      } else {
+        // No title yet: it may occupy the whole of the following line.
+        const after = lines[last + 1];
+        if (after !== undefined && !/^(?: {4}|\t)/.test(after)) {
+          const t = after.trim().match(/^"(.*)"$|^'(.*)'$|^\((.*)\)$/);
+          if (t) {
+            title = (t[1] ?? t[2] ?? t[3] ?? '').trim();
+            last += 1;
+          }
+        }
+      }
+
+      return { url, title, lastLine: last };
+    }
+
     // Harvest GFM link reference definitions (`[label]: url "title"`) and footnote
     // definitions (`[^label]: text`) from the source, removing their lines from the
     // text so they are never rendered as literal paragraphs.
@@ -319,16 +375,31 @@
         }
 
         // Link reference definition: [label]: url "optional title"
-        // The label must not start with `^` (that is a footnote) and the destination
-        // must look like a bare URL token (no spaces) to avoid swallowing ordinary
-        // prose that happens to contain a colon.
-        const refMatch = line.match(/^ {0,3}\[([^\^\]][^\]]*|[^\^\]])\]:\s*(\S+)(?:\s+["'(](.*)["')])?\s*$/);
-        if (refMatch) {
-          const label = refMatch[1].trim().toLowerCase();
-          if (!this.linkRefs.has(label)) {
-            this.linkRefs.set(label, { url: refMatch[2].trim(), title: (refMatch[3] || '').trim() });
+        //
+        // The label must not start with `^` (that is a footnote). CommonMark allows
+        // ONE line ending between the colon and the destination, and another between
+        // the destination and the title, so a single definition may be spread over up
+        // to three lines:
+        //
+        //     [洛谷]:
+        //     https://www.luogu.com.cn/
+        //     "首页"
+        //
+        // Only a *blank* line breaks it. The destination must still be a bare token
+        // with no spaces, which is what keeps ordinary prose containing a colon from
+        // being swallowed ("时间复杂度:" followed by a sentence stays prose).
+        const refHead = line.match(/^ {0,3}\[([^\^\]][^\]]*|[^\^\]])\]:[ \t]*(.*)$/);
+        if (refHead) {
+          const parsed = this.parseLinkRefTail(lines, i, refHead[2]);
+          if (parsed) {
+            const label = refHead[1].trim().toLowerCase();
+            if (!this.linkRefs.has(label)) {
+              this.linkRefs.set(label, { url: parsed.url, title: parsed.title });
+            }
+            i = parsed.lastLine;   // drop every line the definition occupied
+            continue;
           }
-          continue; // drop this line from output
+          // Not a definition after all: fall through and keep the line as prose.
         }
 
         kept.push(line);
@@ -479,11 +550,21 @@
       // CJK ones, which broke valid formulas like $设x=1$. Guessing is the wrong job for
       // a renderer: the linter now raises a "中文不宜放在公式中" warning instead, so the
       // author is told about it while still seeing exactly what they wrote.
-      text = text.replace(/(^|[^\\])\$([^\$\n]+?)\$/g, (match, prefix, formula) => {
+      // A formula may wrap onto the next line: remark-math's inline math spans
+      // multiple lines *within one paragraph*, which is how a `\begin{cases}` block
+      // is normally written inside `$...$`. Newlines are therefore allowed between
+      // the delimiters, but a BLANK line is not: that ends the paragraph, and
+      // pairing across it would let one stray `$` swallow the rest of the document
+      // (the same failure mode the `$$` fence rules exist to prevent).
+      text = text.replace(/(^|[^\\])\$((?:[^\$\n]|\n(?![ \t]*\n))+?)\$/g, (match, prefix, formula) => {
         const f = formula.trim();
         if (!f) return match;
 
         const id = `LUOGUMATHINLINE${mathIdx++}END`;
+        // Keep the placeholder on one line but let parseBlocks know how many source
+        // lines it stood for, so line anchors (scroll sync, Typora) stay aligned.
+        const spanned = match.split('\n').length;
+        if (spanned > 1) this._tokenLines.set(id, spanned);
         store.push({ id, type: 'inline', formula: f });
         return prefix + id;
       });
@@ -1358,13 +1439,24 @@
           break;
         }
 
-        const match = line.match(/^(\s*)([*+-]|\d+[.)])\s+(.*)$/);
+        const match = line.match(/^(\s*)([*+-]|\d+[.)])(\s+)(.*)$/);
         if (!match || this.indentOf(line) !== baseIndent) break;
 
-        let rawText = match[3];
+        // Column where this item's CONTENT starts, i.e. past the marker and the
+        // spaces after it. CommonMark measures nesting and continuation against this
+        // column, not against the marker's own indent: under "1. " (3 columns wide)
+        // a line indented by only 2 spaces is NOT inside the item, it starts a new
+        // top-level list. Using baseIndent instead made "1. x" swallow a 2-space
+        // "- y" as a child list.
+        const contentCol = match[1].length + match[2].length + match[3].length;
+
+        let rawText = match[4];
         const itemStart = i;
         i++;
         let nestedHtml = '';
+        // Continuation lines kept with their indentation relative to contentCol, so
+        // block structures inside the item (tables, fences, quotes) still parse.
+        const contLines = [];
 
         // Detect a task marker now and assign its sequential index in source order.
         // (editor.js's toggleTask maps data-task-index back to the Nth task line in the
@@ -1393,20 +1485,41 @@
           }
           const nind = this.indentOf(nl);
           const isItem = this.isListItem(nl);
-          if (isItem && nind === baseIndent) break;              // sibling at same level
-          if (isItem && nind > baseIndent) {                     // nested list
+          if (isItem && nind < contentCol) break;   // sibling, or a shallower new list
+          if (isItem && nind >= contentCol) {                    // nested list
             const sub = this.parseListAt(lines, i, nind, srcLineOf);
             nestedHtml += sub.html;
             i = sub.nextIndex;
             continue;
           }
-          if (nind > baseIndent) {                               // continuation text line
-            rawText += '\n' + nl.replace(/^[ \t]+/, '');
+          if (nind >= contentCol) {                              // content of this item
+            contLines.push(nl.slice(contentCol));
             i++;
             continue;
           }
-          break;                                                 // non-indented non-item ends item
+          if (nind > baseIndent) {                               // indented, but shallow
+            contLines.push(nl.replace(/^[ \t]+/, ''));
+            i++;
+            continue;
+          }
+          // Lazy continuation: an unindented line straight after the item's text is
+          // still part of its paragraph (CommonMark), as long as it does not itself
+          // open a block.
+          if (!BLOCK_START_RE.test(nl)) {
+            contLines.push(nl.trim());
+            i++;
+            continue;
+          }
+          break;                                                 // a new block ends the item
         }
+
+        // Does the item hold block-level content? Continuation lines were previously
+        // only run through renderInline(), so an indented table inside a bullet came
+        // out as literal pipes.
+        const blockish = contLines.some((l) => BLOCK_IN_ITEM_RE.test(l))
+          || (contLines.length > 0 && contLines.some((l) => /^\s*$/.test(l)));
+        if (blockish) rawText = { block: [rawText].concat(contLines) };
+        else if (contLines.length) rawText += '\n' + contLines.join('\n');
 
         items.push({
           rawText, nestedHtml, taskIdx,
@@ -1424,8 +1537,10 @@
         if (it.taskIdx !== null) {
           liClass = 'luogu-task-item';
           // Re-match on the final rawText (which may include continuation lines)
-          const finalMatch = it.rawText.match(/^\[([ xX])\]\s*(.*)$/);
-          const content = finalMatch ? finalMatch[2] : it.rawText;
+          const body = (it.rawText && it.rawText.block)
+            ? it.rawText.block.join('\n') : it.rawText;
+          const finalMatch = body.match(/^\[([ xX])\]\s*(.*)$/);
+          const content = finalMatch ? finalMatch[2] : body;
           inner = `
             <label class="luogu-checkbox-label">
               <input type="checkbox" class="luogu-task-checkbox" data-task-index="${it.taskIdx}" ${it.taskChecked ? 'checked' : ''} onchange="toggleTaskCheckbox(this)" />
@@ -1433,6 +1548,10 @@
               <span class="luogu-task-text">${this.renderInline(content)}</span>
             </label>
           `;
+        } else if (it.rawText && it.rawText.block) {
+          // Re-parse the item's body as blocks so tables / fences / quotes inside a
+          // list render as real structures rather than escaped text.
+          inner = this.parseBlocks(it.rawText.block);
         } else {
           inner = this.renderInline(it.rawText);
         }

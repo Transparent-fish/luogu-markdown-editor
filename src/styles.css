@@ -465,9 +465,59 @@ html, body {
 
 
 
+/* Holds the highlight layer and the textarea in the same coordinate space.
+   Carries the editor background, since the textarea itself is now transparent. */
+.editor-stack {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+  display: flex;
+  background: var(--bg-editor);
+}
+
+/* Must match .editor-textarea metric for metric, or the painted boxes drift away
+   from the glyphs they are meant to sit behind. */
+.find-highlights {
+  position: absolute;
+  inset: 0;
+  padding: 12px 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+.find-highlights mark {
+  background: rgba(241, 196, 15, .40);
+  color: transparent;
+  border-radius: 2px;
+}
+.find-highlights mark.is-current {
+  background: rgba(243, 156, 18, .75);
+  box-shadow: 0 0 0 1px rgba(211, 84, 0, .9);
+}
+[data-theme="dark"] .find-highlights mark {
+  background: rgba(241, 196, 15, .28);
+}
+[data-theme="dark"] .find-highlights mark.is-current {
+  background: rgba(243, 156, 18, .62);
+}
+
 .editor-textarea {
   flex: 1;
   height: 100%;
+  /* Transparent so the highlight layer shows through; the caret keeps its own
+     colour via caret-color. */
+  position: relative;
+  z-index: 1;
+  background-color: transparent;
   padding: 12px 16px;
   border: none;
   outline: none;
@@ -476,7 +526,7 @@ html, body {
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-primary);
-  background: var(--bg-editor);
+  caret-color: var(--text-primary);
   tab-size: 4;
   /* Soft-wrap long lines so nothing hides off-screen horizontally. A logical line may
      now span several visual rows, so the gutter can no longer assume one row per line;
@@ -2800,3 +2850,89 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   transform: rotate(-45deg);
   border-radius: 2px;
 }
+
+/* ---- Find & replace bar -----------------------------------------------------
+   Docked above the editor rather than shown as a modal: replacing text is an
+   iterative task, and a modal would cover the very matches being stepped through. */
+.find-bar {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+.find-bar[hidden] { display: none; }
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.find-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+.find-input:focus {
+  outline: none;
+  border-color: var(--luogu-blue);
+  box-shadow: 0 0 0 2px var(--luogu-blue-light, rgba(52, 152, 219, .25));
+}
+.find-count {
+  flex: none;
+  min-width: 52px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.find-btn {
+  flex: none;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.find-btn:hover { border-color: var(--luogu-blue); color: var(--luogu-blue); }
+.find-btn-wide { min-width: 46px; }
+.find-close { font-size: 18px; }
+.find-opts { flex-wrap: wrap; gap: 12px; }
+.find-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.find-opt input { cursor: pointer; }
+.find-error {
+  font-size: 12px;
+  color: var(--luogu-red, #e74c3c);
+}
+
+/* "Replace all" armed for confirmation: it rewrites the whole document, so the
+   second click is deliberate rather than a repeat of the first. */
+.find-btn.is-armed {
+  min-width: 0;
+  padding: 0 10px;
+  color: #fff;
+  background: var(--luogu-red, #e74c3c);
+  border-color: var(--luogu-red, #e74c3c);
+  font-weight: 600;
+}
+.find-btn.is-armed:hover { color: #fff; filter: brightness(1.08); }

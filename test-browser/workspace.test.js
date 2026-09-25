@@ -154,6 +154,392 @@ const { chromium } = require('playwright');
   ck(save.second.download === 0, '不退化为浏览器下载');
   ck(save.third.picker === 2, '解除关联后重新弹出另存为', `picker=${save.third.picker}`);
 
+  // ---- 要求 43: 查找 / 替换 -------------------------------------------------------
+  {
+    const setDoc = async (md) => {
+      await p.evaluate((v) => {
+        const ta = document.getElementById('editorTextarea');
+        ta.value = v; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        LuoguEditor.render(); LuoguEditor.setViewMode('split');
+      }, md);
+      await p.evaluate(() => document.getElementById('editorTextarea').focus());
+      await p.waitForTimeout(300);
+    };
+    const cnt = () => p.evaluate(() => document.getElementById('findCount').textContent);
+    const open = () => p.evaluate(() => !document.getElementById('findBar').hidden);
+    const setFind = async (q, r) => {
+      await p.evaluate(([a, bb]) => {
+        const fi = document.getElementById('findInput');
+        fi.value = a; fi.dispatchEvent(new Event('input', { bubbles: true }));
+        if (bb !== null) document.getElementById('replaceInput').value = bb;
+      }, [q, r === undefined ? null : r]);
+      await p.waitForTimeout(220);
+    };
+    const setOpt = async (id, on) => {
+      await p.evaluate(([i, v]) => {
+        const el = document.getElementById(i);
+        el.checked = v; el.dispatchEvent(new Event('change', { bubbles: true }));
+      }, [id, on]);
+      await p.waitForTimeout(220);
+    };
+
+    await setDoc('alpha beta alpha gamma ALPHA');
+    await p.keyboard.press('Control+f');
+    await p.waitForTimeout(300);
+    ck(await open(), 'Ctrl+F 打开查找栏');
+    await setFind('alpha');
+    ck((await cnt()) === '1/3', '默认忽略大小写找到 3 处', await cnt());
+    await setOpt('findCase', true);
+    ck((await cnt()) === '1/2', '区分大小写生效', await cnt());
+    await setOpt('findCase', false);
+
+    await p.evaluate(() => LuoguEditor.findNext());
+    await p.waitForTimeout(200);
+    ck((await cnt()) === '2/3', '下一个');
+    await p.evaluate(() => { LuoguEditor.findNext(); LuoguEditor.findNext(); });
+    await p.waitForTimeout(200);
+    ck((await cnt()) === '1/3', '到末尾后循环回第一个', await cnt());
+    await p.evaluate(() => LuoguEditor.findPrev());
+    await p.waitForTimeout(200);
+    ck((await cnt()) === '3/3', '上一个可反向循环', await cnt());
+
+    ck(await p.evaluate(() => {
+      const ta = document.getElementById('editorTextarea');
+      return ta.value.slice(ta.selectionStart, ta.selectionEnd).toLowerCase() === 'alpha';
+    }), '当前匹配在源码中被选中');
+
+    // 替换
+    await setDoc('cat dog cat bird cat');
+    await p.evaluate(() => LuoguEditor.openFind(true));
+    await p.waitForTimeout(250);
+    await setFind('cat', 'fox');
+    await p.evaluate(() => LuoguEditor.replaceOne());
+    await p.waitForTimeout(350);
+    ck((await src()) === 'fox dog cat bird cat', '替换单个', JSON.stringify(await src()));
+    await p.evaluate(() => LuoguEditor.replaceAll(true));   // force：跳过二次确认
+    await p.waitForTimeout(400);
+    ck((await src()) === 'fox dog fox bird fox', '替换全部', JSON.stringify(await src()));
+    await p.evaluate(() => LuoguEditor.undo());
+    await p.waitForTimeout(350);
+    ck((await src()) === 'fox dog cat bird cat', '替换可被 Ctrl+Z 撤销', JSON.stringify(await src()));
+
+    // 元字符按字面处理：搜 "$x^2$" 不能被当成正则
+    await setDoc('公式 $x^2$ 与 $x^2$ 两处');
+    await setFind('$x^2$', 'Y');
+    ck((await cnt()) === '1/2', '含正则元字符的查询按字面匹配', await cnt());
+    await p.evaluate(() => LuoguEditor.replaceAll(true));   // force：跳过二次确认
+    await p.waitForTimeout(350);
+    ck((await src()) === '公式 Y 与 Y 两处', '字面替换正确', JSON.stringify(await src()));
+
+    // 正则 + 分组引用
+    await setDoc('a1 b2 c3');
+    await setOpt('findRegex', true);
+    await setFind('([a-z])(\\d)', '$2$1');
+    ck((await cnt()) === '1/3', '正则匹配 3 处', await cnt());
+    await p.evaluate(() => LuoguEditor.replaceAll(true));   // force：跳过二次确认
+    await p.waitForTimeout(350);
+    ck((await src()) === '1a 2b 3c', '$1/$2 分组引用生效', JSON.stringify(await src()));
+
+    // 非法正则提示、空匹配不死循环
+    await setFind('([', '');
+    ck((await p.evaluate(() => document.getElementById('findError').textContent)).includes('正则无效'),
+      '非法正则给出提示');
+    await setDoc('aaa');
+    await setFind('a*', 'X');
+    ck((await cnt()) !== '0/0', '可匹配空串的模式不死循环', await cnt());
+    await setOpt('findRegex', false);
+
+    // 全词匹配
+    await setDoc('dp dpx xdp dp');
+    await setOpt('findWord', true);
+    await setFind('dp');
+    ck((await cnt()) === '1/2', '全词匹配排除 dpx / xdp', await cnt());
+    await setOpt('findWord', false);
+
+    await p.evaluate(() => document.getElementById('findInput').focus());
+    await p.keyboard.press('Escape');
+    await p.waitForTimeout(250);
+    ck(!(await open()), 'Esc 关闭查找栏');
+  }
+
+  // ---- 要求 44: 匹配高亮 + 全部替换需二次确认 --------------------------------------
+  {
+    const setDoc2 = async (md) => {
+      await p.evaluate((v) => {
+        const ta = document.getElementById('editorTextarea');
+        ta.value = v; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        LuoguEditor.render(); LuoguEditor.setViewMode('split');
+        ta.focus(); ta.setSelectionRange(0, 0);
+      }, md);
+      await p.waitForTimeout(300);
+    };
+    const find2 = async (q, r) => {
+      await p.evaluate(([a, bb]) => {
+        const fi = document.getElementById('findInput');
+        fi.value = a; fi.dispatchEvent(new Event('input', { bubbles: true }));
+        if (bb !== null) document.getElementById('replaceInput').value = bb;
+      }, [q, r === undefined ? null : r]);
+      await p.waitForTimeout(260);
+    };
+    const marks = () => p.evaluate(() => {
+      const l = document.getElementById('findHighlights');
+      return {
+        total: l.querySelectorAll('mark').length,
+        current: l.querySelectorAll('mark.is-current').length,
+        texts: [...l.querySelectorAll('mark')].map((m) => m.textContent),
+      };
+    });
+    const allBtn = () => p.evaluate(() => {
+      const el = document.getElementById('replaceAllBtn');
+      return { text: el.textContent.trim(), armed: el.classList.contains('is-armed') };
+    });
+
+    // --- 高亮 ---
+    await setDoc2('alpha beta alpha gamma alpha');
+    await p.evaluate(() => LuoguEditor.openFind(false));
+    await p.waitForTimeout(220);
+    await find2('alpha');
+    let mk = await marks();
+    ck(mk.total === 3, '所有匹配都被高亮', JSON.stringify(mk));
+    ck(mk.current === 1, '当前匹配唯一标记', JSON.stringify(mk));
+    ck(mk.texts.every((t) => t === 'alpha'), '高亮的是匹配文本本身', JSON.stringify(mk.texts));
+
+    await p.evaluate(() => LuoguEditor.findNext());
+    await p.waitForTimeout(240);
+    ck(await p.evaluate(() => [...document.querySelectorAll('#findHighlights mark')]
+      .findIndex((x) => x.classList.contains('is-current'))) === 1,
+      '跳转时当前高亮随之移动');
+
+    // 层与文本框度量必须一致，否则高亮会错位
+    ck(await p.evaluate(() => {
+      const cs = (el) => { const s = getComputedStyle(el);
+        return [s.fontFamily, s.fontSize, s.lineHeight, s.paddingTop, s.paddingLeft,
+          s.paddingBottom, s.whiteSpace, s.tabSize].join('|'); };
+      return cs(document.getElementById('findHighlights'))
+        === cs(document.getElementById('editorTextarea'));
+    }), '高亮层与编辑区度量一致（不错位）');
+    ck(await p.evaluate(() =>
+      getComputedStyle(document.getElementById('findHighlights')).pointerEvents === 'none'),
+      '高亮层不拦截鼠标');
+
+    // 滚动跟随
+    await setDoc2(Array.from({ length: 200 }, (_, i) => `第 ${i} 行 target`).join('\n'));
+    await p.evaluate(() => LuoguEditor.openFind(false));
+    await find2('target');
+    await p.evaluate(() => {
+      const ta = document.getElementById('editorTextarea');
+      ta.scrollTop = 800; ta.dispatchEvent(new Event('scroll'));
+    });
+    await p.waitForTimeout(280);
+    ck(await p.evaluate(() => Math.abs(
+      document.getElementById('editorTextarea').scrollTop
+      - document.getElementById('findHighlights').scrollTop) <= 1),
+      '滚动时高亮层同步');
+
+    await p.evaluate(() => LuoguEditor.closeFind());
+    await p.waitForTimeout(220);
+    ck((await marks()).total === 0, '关闭查找后清除高亮');
+
+    // --- 全部替换的二次确认 ---
+    await setDoc2('cat dog cat bird cat');
+    await p.evaluate(() => LuoguEditor.openFind(true));
+    await p.waitForTimeout(200);
+    await find2('cat', 'fox');
+    await p.click('#replaceAllBtn');
+    await p.waitForTimeout(320);
+    ck((await src()) === 'cat dog cat bird cat', '第一次点「全部」不改动文档',
+      JSON.stringify(await src()));
+    const armed = await allBtn();
+    ck(armed.armed && /3/.test(armed.text), '按钮进入确认态并显示处数', JSON.stringify(armed));
+    await p.click('#replaceAllBtn');
+    await p.waitForTimeout(380);
+    ck((await src()) === 'fox dog fox bird fox', '第二次点击才执行替换',
+      JSON.stringify(await src()));
+    ck((await allBtn()).text === '全部', '执行后按钮复位');
+
+    // 确认态必须随上下文失效，避免"确认"落到别的查询上
+    await setDoc2('cat cat');
+    await p.evaluate(() => LuoguEditor.openFind(true));
+    await find2('cat', 'fox');
+    await p.click('#replaceAllBtn');
+    await p.waitForTimeout(240);
+    await find2('dog', 'fox');
+    ck(!(await allBtn()).armed, '更改查询会解除确认态');
+    await find2('cat', 'fox');
+    await p.click('#replaceAllBtn');
+    await p.waitForTimeout(240);
+    await p.evaluate(() => LuoguEditor.closeFind());
+    await p.waitForTimeout(220);
+    ck(!(await allBtn()).armed, '关闭查找栏会解除确认态');
+
+    // 单次替换不受确认流程影响
+    await setDoc2('cat cat cat');
+    await p.evaluate(() => LuoguEditor.openFind(true));
+    await find2('cat', 'fox');
+    await p.evaluate(() => LuoguEditor.replaceOne());
+    await p.waitForTimeout(350);
+    ck((await src()) === 'fox cat cat', '「替换」仍是一次一处、无需确认',
+      JSON.stringify(await src()));
+    await p.evaluate(() => LuoguEditor.closeFind());
+    await p.waitForTimeout(200);
+  }
+
+  // ---- 要求 45: 查找栏内 Ctrl+Z 必须撤销文档（而非输入框自己的历史）----------------
+  {
+    const freshDoc = async (md) => {
+      await p.evaluate((v) => {
+        const ta = document.getElementById('editorTextarea');
+        LuoguEditor.undoStack = []; LuoguEditor.redoStack = [];
+        ta.value = v; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        LuoguEditor.render(); LuoguEditor.setViewMode('split');
+        ta.focus(); ta.setSelectionRange(0, 0);
+      }, md);
+      await p.waitForTimeout(550);
+    };
+    const openRep = async (q, r) => {
+      await p.evaluate(() => LuoguEditor.openFind(true));
+      await p.waitForTimeout(200);
+      await p.evaluate(([a, bb]) => {
+        const fi = document.getElementById('findInput');
+        fi.value = a; fi.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('replaceInput').value = bb;
+      }, [q, r]);
+      await p.waitForTimeout(240);
+    };
+    const focusId = () => p.evaluate(() => document.activeElement.id || document.activeElement.tagName);
+
+    // 替换之后焦点本就停在替换框里，此前 Ctrl+Z 被输入框自身的撤销栈吃掉，
+    // 表现为"替换撤不回来"。
+    await freshDoc('cat cat cat cat cat');
+    await openRep('cat', 'fox');
+    await p.evaluate(() => document.getElementById('replaceInput').focus());
+    for (let i = 0; i < 4; i++) { await p.keyboard.press('Enter'); await p.waitForTimeout(230); }
+    ck((await src()) === 'fox fox fox fox cat', '替换框内连按 Enter 替换 4 处',
+      JSON.stringify(await src()));
+    for (let i = 0; i < 4; i++) { await p.keyboard.press('Control+z'); await p.waitForTimeout(250); }
+    ck((await src()) === 'cat cat cat cat cat', '替换框内 Ctrl+Z 可逐条撤回',
+      JSON.stringify(await src()));
+    ck((await focusId()) === 'replaceInput', '撤销不把焦点抢回编辑区', await focusId());
+
+    await freshDoc('dog dog dog');
+    await openRep('dog', 'pig');
+    await p.evaluate(() => LuoguEditor.replaceOne());
+    await p.waitForTimeout(280);
+    await p.evaluate(() => document.getElementById('findInput').focus());
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(280);
+    ck((await src()) === 'dog dog dog', '查找框内 Ctrl+Z 同样生效', JSON.stringify(await src()));
+    await p.keyboard.press('Control+y');
+    await p.waitForTimeout(280);
+    ck((await src()) === 'pig dog dog', '查找框内 Ctrl+Y 可重做', JSON.stringify(await src()));
+
+    // 撤销改变了文本，高亮与计数必须跟着重算
+    await freshDoc('cat cat cat');
+    await openRep('cat', 'fox');
+    await p.evaluate(() => document.getElementById('replaceInput').focus());
+    await p.keyboard.press('Enter');
+    await p.waitForTimeout(280);
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(330);
+    const st = await p.evaluate(() => ({
+      marks: document.querySelectorAll('#findHighlights mark').length,
+      cnt: document.getElementById('findCount').textContent,
+    }));
+    ck(st.marks === 3, '撤销后高亮重新标出全部匹配', JSON.stringify(st));
+    ck(st.cnt.endsWith('/3'), '撤销后计数同步', JSON.stringify(st));
+
+    // 整批替换只占一条历史，一次即可撤回
+    await freshDoc('a a a a a a a a');
+    await openRep('a', 'b');
+    await p.evaluate(() => LuoguEditor.replaceAll(true));
+    await p.waitForTimeout(380);
+    await p.evaluate(() => document.getElementById('replaceInput').focus());
+    await p.keyboard.press('Control+z');
+    await p.waitForTimeout(330);
+    ck((await src()) === 'a a a a a a a a', '全部替换可一次撤回', JSON.stringify(await src()));
+
+    await p.evaluate(() => LuoguEditor.closeFind());
+    await p.waitForTimeout(200);
+  }
+
+  // ---- 要求 46: 可关闭排版问题显示 -------------------------------------------------
+  {
+    const BAD = '这是中文and英文混排没有空格，还有数字123贴着字。';
+    const setBad = async (extra) => {
+      await p.evaluate((v) => {
+        const ta = document.getElementById('editorTextarea');
+        ta.value = v; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        LuoguEditor.render(); LuoguEditor.updateStats(v);
+      }, BAD + (extra || ''));
+      await p.waitForTimeout(350);
+    };
+    const badge = () => p.evaluate(() => {
+      const el = document.getElementById('linterScoreBadge');
+      return { hidden: el.hidden, shown: el.offsetParent !== null, text: el.innerText };
+    });
+
+    await p.evaluate(() => LuoguEditor.toggleLintDisplay(true));
+    await setBad();
+    let bg = await badge();
+    ck(!bg.hidden && bg.shown && /排版评分/.test(bg.text), '默认显示排版评分', JSON.stringify(bg));
+
+    await p.evaluate(() => LuoguEditor.toggleLintDisplay(false));
+    await p.waitForTimeout(300);
+    bg = await badge();
+    ck(bg.hidden && !bg.shown, '关闭后徽标隐藏', JSON.stringify(bg));
+    ck(await p.evaluate(() => document.getElementById('lintToggleMark').textContent === '⬜'),
+      '菜单勾选标记同步');
+    ck(await p.evaluate(() => localStorage.getItem('luogu_editor_lint_display') === '0'),
+      '偏好写入 localStorage');
+
+    await setBad('再加一句。');
+    ck((await badge()).hidden, '继续编辑不会让徽标复现');
+    ck(/字符/.test(await p.evaluate(() => document.getElementById('docStatsText').innerText)),
+      '字数统计不受影响');
+
+    // 关闭后不应再为看不见的结果付出 lint 开销
+    const calls = await p.evaluate(() => {
+      let n = 0;
+      const orig = LuoguEditor.linter.lint.bind(LuoguEditor.linter);
+      LuoguEditor.linter.lint = (t) => { n++; return orig(t); };
+      LuoguEditor.updateStats('随便一些文字and字母。');
+      LuoguEditor.linter.lint = orig;
+      return n;
+    });
+    ck(calls === 0, '关闭后不再运行 linter', `调用 ${calls} 次`);
+
+    // 排版修复按钮与 linter 本身仍可用
+    await p.evaluate(() => {
+      const ta = document.getElementById('editorTextarea');
+      ta.value = '中文and英文'; ta.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await p.waitForTimeout(250);
+    await p.evaluate(() => LuoguEditor.autoFixSpacing());
+    await p.waitForTimeout(350);
+    ck((await src()) !== '中文and英文', '「洛谷排版修复」仍可用', JSON.stringify(await src()));
+
+    await p.evaluate(() => LuoguEditor.toggleLintDisplay(true));
+    await p.waitForTimeout(350);
+    bg = await badge();
+    ck(!bg.hidden && /排版评分:\s*\d+/.test(bg.text), '重新开启后评分为最新值', JSON.stringify(bg));
+
+    // 关闭显示时不该留下报告弹窗
+    await p.evaluate(() => LuoguEditor.openModal('linterModal'));
+    await p.waitForTimeout(300);
+    await p.evaluate(() => LuoguEditor.toggleLintDisplay(false));
+    await p.waitForTimeout(350);
+    ck(await p.evaluate(() => {
+      const m = document.getElementById('linterModal');
+      return !m.classList.contains('show') || getComputedStyle(m).display === 'none';
+    }), '关闭显示会收起报告弹窗');
+    await p.evaluate(() => LuoguEditor.toggleLintDisplay(true));
+    await p.waitForTimeout(300);
+  }
+
+
+
+
+
   ck(errs.length === 0, '无 JS 报错', errs.join(' | '));
   console.log(`\n工作区 ${pass + fail} 项，失败 ${fail}`);
   await b.close();

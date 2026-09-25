@@ -638,6 +638,169 @@ test('GFM footnotes', () => {
   assert.doesNotMatch(render('文字\n\n[^1]: 未被引用'), /luogu-footnotes/);
 });
 
+// ------------------------------- List items hold real blocks
+//
+// Two bugs reported against the VSCode sibling project reproduced here as well.
+// Both come from the same root cause: continuation lines were measured against the
+// marker's indent instead of the item's CONTENT column, and were only ever run
+// through renderInline(), so no block structure inside an item could survive.
+
+test('an indented table inside a list item renders as a table', () => {
+  for (const src of [
+    '- 1\n\n  | 2 | 3 |\n  |:-:|:-:|\n  | 4 | 5 |',   // blank line before
+    '- 1\n  | 2 | 3 |\n  |:-:|:-:|\n  | 4 | 5 |',       // no blank line
+    '1. 甲\n\n   | a | b |\n   |---|---|\n   | 1 | 2 |', // ordered, 3-space column
+  ]) {
+    const h = render(src);
+    assert.match(h, /<li[^>]*>[\s\S]*<table[\s\S]*<\/table>[\s\S]*<\/li>/,
+      `表格未渲染在列表项内: ${JSON.stringify(src)}`);
+    assert.doesNotMatch(h, /\|:-:\|/, '仍有未解析的表格分隔行');
+  }
+});
+
+test('other block constructs also work inside a list item', () => {
+  assert.match(render('- a\n\n  ```\n  x\n  ```'), /<li[^>]*>[\s\S]*<pre/);
+  assert.match(render('- a\n\n  > q'), /<li[^>]*>[\s\S]*<blockquote/);
+  assert.match(render('- a\n\n  # h'), /<li[^>]*>[\s\S]*<h1/);
+});
+
+test('nesting is measured against the content column, not the marker indent', () => {
+  // "1. " is 3 columns wide, so 2 spaces is NOT inside the item: per CommonMark the
+  // bullet starts a new top-level list instead of becoming a child of "1.".
+  const shallow = render('1. 1\n  - test');
+  assert.doesNotMatch(shallow, /<ol[\s\S]*<ul[\s\S]*<\/ul>[\s\S]*<\/ol>/,
+    '2 空格不应嵌套进有序列表项');
+  // Three spaces reaches the content column and does nest.
+  assert.match(render('1. 1\n   - test'), /<ol[\s\S]*<ul[\s\S]*<\/ul>[\s\S]*<\/ol>/);
+  // An unordered "- " is only 2 columns wide, so 2 spaces is enough there.
+  assert.match(render('- 1\n  - test'), /<ul[\s\S]*<ul[\s\S]*<\/ul>[\s\S]*<\/ul>/);
+});
+
+test('a plain line right after an item lazily continues it', () => {
+  // CommonMark lazy continuation: no indent needed to stay in the paragraph.
+  const h = render('- a\nb');
+  assert.match(h, /<li[^>]*>a\s*b<\/li>/);
+  // A blank line ends the item, so the text becomes its own paragraph.
+  assert.match(render('- a\n\nb'), /<\/ul>\s*<p[^>]*>b<\/p>/);
+  // A line that opens a block is not swallowed.
+  for (const [src, re] of [
+    ['- a\n# h', /<h1/], ['- a\n> q', /<blockquote/],
+    ['- a\n```\nx\n```', /<pre/], ['- a\n---', /<hr/],
+  ]) {
+    const out = render(src);
+    assert.match(out, re, `块级行未被解析为块: ${JSON.stringify(src)}`);
+    // The block must sit AFTER the list, not inside the item. Compare positions
+    // rather than using a greedy regex, which would happily span across </li>.
+    const liEnd = out.indexOf('</ul>');
+    const blockAt = out.search(re);
+    assert.ok(blockAt > liEnd,
+      `块级行被吞进了列表项: ${JSON.stringify(src)} -> ${out}`);
+  }
+});
+
+test('list item content is never dropped', () => {
+  // Even where we do not yet emit CommonMark's <p> wrappers for loose lists, the
+  // text itself must survive.
+  for (const [src, want] of [
+    ['- a\n\n  b', ['a', 'b']],
+    ['- a\n\n  b\n\n  c', ['a', 'b', 'c']],
+    ['- a\n\n- b', ['a', 'b']],
+  ]) {
+    const text = render(src).replace(/<[^>]*>/g, ' ');
+    for (const w of want) assert.ok(text.includes(w), `内容丢失 ${w}: ${JSON.stringify(src)}`);
+  }
+});
+
+// ------------------------------- Link reference definitions may wrap
+//
+// CommonMark allows one line ending between the label's colon and the destination,
+// and another between the destination and the title. Our definition harvester used
+// to require everything on a single line, so this very common Luogu form left the
+// definition sitting in the output as literal text:
+//
+//     [洛谷]。
+//
+//     [洛谷]:
+//     https://www.luogu.com.cn/
+//
+// Behaviour below was pinned against the CommonMark reference implementation.
+
+test('link reference definition may put the destination on the next line', () => {
+  const h = render('[洛谷]。\n\n[洛谷]:\nhttps://www.luogu.com.cn/');
+  assert.match(h, /<a href="https:\/\/www\.luogu\.com\.cn\/"[^>]*>洛谷<\/a>/);
+  // The definition itself must not survive as text.
+  assert.doesNotMatch(h, /\[洛谷\]:/);
+});
+
+test('wrapped definitions accept indentation and a title on either line', () => {
+  assert.match(render('[a]。\n\n[a]:\n   /url'), /href="\/url"/);
+  assert.match(render('[a]。\n\n[a]:\n/url\n"标题"'), /title="标题"/);
+  assert.match(render('[a]。\n\n[a]: /url\n"标题"'), /title="标题"/);
+  assert.match(render("[a]。\n\n[a]:\n/url\n'标题'"), /title="标题"/);
+  assert.match(render('[a]。\n\n[a]:\n/url\n(标题)'), /title="标题"/);
+});
+
+test('a wrapped definition stops at a blank line or trailing junk', () => {
+  // These are NOT definitions; the text must stay exactly as written.
+  for (const src of [
+    '[a]。\n\n[a]:\n\n/url',          // blank line before the destination
+    '[a]。\n\n[a]:',                   // nothing after the colon
+    '[a]。\n\n[a]:\n这是一句话 有空格',  // destination cannot contain spaces
+    '[a]。\n\n[a]:\n/url 后面还有字',    // junk after the destination
+  ]) {
+    assert.doesNotMatch(render(src), /<a href/, `不应产生链接: ${JSON.stringify(src)}`);
+  }
+  // Ordinary prose that merely contains a colon is untouched.
+  assert.doesNotMatch(render('时间复杂度:\nO(n)'), /<a href/);
+});
+
+test('wrapped definitions respect code blocks and indentation', () => {
+  assert.doesNotMatch(render('```\n[a]:\n/url\n```\n\n[a]。'), /<a href="\/url"/);
+  assert.doesNotMatch(render('    [a]:\n    /url\n\n[a]。'), /<a href="\/url"/);
+});
+
+test('wrapped definitions still sanitise the destination', () => {
+  for (const scheme of ['javascript:alert(1)', 'vbscript:msgbox(1)', 'JaVaScRiPt:alert(1)']) {
+    const h = render(`[x]。\n\n[x]:\n${scheme}`);
+    assert.doesNotMatch(h, /href="(?:javascript|vbscript|data):/i);
+  }
+});
+
+test('several wrapped definitions in a row all register', () => {
+  const h = render('[a]:\n/u1\n[b]:\n/u2\n\n[a] [b]');
+  assert.match(h, /href="\/u1"/);
+  assert.match(h, /href="\/u2"/);
+  // First definition of a duplicated label wins, as in CommonMark.
+  assert.match(render('[a]:\n/first\n\n[a]:\n/second\n\n[a]'), /href="\/first"/);
+});
+
+// ------------------------------- Inline math may wrap onto the next line
+//
+// remark-math (what Luogu renders with) allows inline `$...$` to span multiple
+// lines inside one paragraph. Our regex used to forbid newlines outright, so a
+// perfectly ordinary multi-line `\begin{cases}` written inside `$...$` fell through
+// as literal text.
+
+test('inline $...$ may span lines within a paragraph', () => {
+  const src = '$F(n)=\\sum_{d\\mid n} \\mu(d)=\\begin{cases}\n1 & n=1 \\\\\n0 & n>1\n\\end{cases}$';
+  const h = render(src);
+  assert.match(h, /luogu-math-inline/);
+  // Nothing may be left over as literal source text.
+  assert.doesNotMatch(h, /<p[^>]*>[^<]*\\begin\{cases\}/);
+});
+
+test('inline math still stops at a blank line', () => {
+  // Pairing across a paragraph break would let one stray `$` swallow the document.
+  assert.doesNotMatch(render('$a\n\nb$'), /luogu-math-inline/);
+  assert.doesNotMatch(render('单个 $ 符号\n\n另一段\n\n再一段'), /luogu-math-inline/);
+});
+
+test('multi-line inline math does not disturb code or escapes', () => {
+  assert.doesNotMatch(render('```\n$a\nb$\n```'), /luogu-math/);
+  assert.doesNotMatch(render('`$a$`'), /luogu-math/);
+  assert.doesNotMatch(render('\\$5 到 \\$10'), /luogu-math-inline/);
+});
+
 // ------------------------------- Display math is a line-based fence
 //
 // Luogu renders with remark-math, where `$$` is a line-based fence rather than a

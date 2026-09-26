@@ -148,6 +148,11 @@ jobs:
       - name: Long-image export suite
         run: node test-browser/export-image.test.js
 
+      # Paging markers drive PDF/print and split the long image. The export mutates
+      # the live preview, so this also guards that it is restored.
+      - name: Pagination suite
+        run: node test-browser/pagination.test.js
+
   python:
     runs-on: ubuntu-latest
     steps:

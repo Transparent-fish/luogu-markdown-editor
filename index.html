@@ -766,6 +766,20 @@
         <li><code>Tab</code> / <code>Shift + Tab</code>：增加 / 减少 4 空格缩进</li>
       </ul>
 
+      <h4 style="color:var(--luogu-blue); margin-top: 16px;">📄 分页与页眉页脚：</h4>
+      <ul style="padding-left: 20px; margin-top: 6px;">
+        <li>各占一行，无需闭合的 <code>:::</code>：
+          <br /><code>:::Pagination</code> —— 在此处分页；
+          <br /><code>:::Header[页眉文字]</code> / <code>:::Footer[页脚文字]</code> —— 写在一个区块开头，设置该区块的页眉页脚。</li>
+        <li>页脚里可用 <code>{page}</code> 与 <code>{pages}</code> 插入当前页码与总页数，例如
+          <code>:::Footer[第 {page} 页 / 共 {pages} 页]</code>。</li>
+        <li><b>打印 / 导出 PDF</b>：真正分页；同一区块跨多页时，页眉页脚会在每页重复。</li>
+        <li><b>导出长图 PNG</b>：按分页拆成多张图（<code>文件名-1.png</code>、<code>-2.png</code>……），
+          每张都是完整比例，顺带避开超长文章被整体缩小的问题。</li>
+        <li><b>导出独立 HTML</b>：分页信息一并带上，读者打印那个文件时同样分页。</li>
+        <li>这三个标记在预览里显示为浅色小标签，方便定位；打印与导出时不会出现在成品中。</li>
+      </ul>
+
       <h4 style="color:var(--luogu-blue); margin-top: 16px;">🖼️ 导出长图 PNG：</h4>
       <ul style="padding-left: 20px; margin-top: 6px;">
         <li>「导出」菜单 →「导出长图 PNG」，把整篇预览截成一张竖向长图，适合发论坛或聊天软件。</li>

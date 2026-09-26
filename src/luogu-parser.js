@@ -816,6 +816,33 @@
           continue;
         }
 
+        // 2b. Paging markers. These are leaf directives — a whole line on their own,
+        // with no closing `:::` — and they produce no visible article content. They
+        // only carry instructions for the paged outputs (PDF / print, and the long
+        // image, which splits into one picture per section). In the preview they are
+        // drawn as small chips so the author can see where a page will break and what
+        // the running head will say.
+        const pageMatch = line.trim()
+          .match(/^:{3,}(pagination|header|footer)(?:\[([\s\S]*?)\])?\s*$/i);
+        if (pageMatch) {
+          const kind = pageMatch[1].toLowerCase();
+          const label = (pageMatch[2] || '').trim();
+          const anchor = ` data-src-line="${srcLineOf ? srcLineOf[i] : i}"`;
+          if (kind === 'pagination') {
+            out.push(`<div class="luogu-page-break" data-page-break="1"${anchor}`
+              + ` role="separator" aria-label="分页"><span>分页</span></div>`);
+          } else {
+            // The text is kept in a data attribute, not only as visible text: the
+            // print path copies it into a CSS `content:` string where markup cannot go.
+            out.push(`<div class="luogu-page-meta luogu-page-${kind}"`
+              + ` data-page-${kind}="${escapeHtml(label)}"${anchor}>`
+              + `<span class="luogu-page-meta-tag">${kind === 'header' ? '页眉' : '页脚'}</span>`
+              + `<span class="luogu-page-meta-text">${escapeHtml(label)}</span></div>`);
+          }
+          i++;
+          continue;
+        }
+
         // 3. Luogu Container Blocks (Colons: :::info, :::epigraph, :::align, etc.)
         const colonMatch = line.match(/^(:{3,})([a-zA-Z0-9_\-]+)(?:\[(.*?)\])?(?:\{(.*?)\})?\s*$/);
         // An unrecognised name must NOT open a container. `:::s` (a typo for the

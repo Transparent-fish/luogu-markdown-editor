@@ -2936,3 +2936,65 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   font-weight: 600;
 }
 .find-btn.is-armed:hover { color: #fff; filter: brightness(1.08); }
+
+/* ---- Paging markers ---------------------------------------------------------
+   `:::Pagination`, `:::Header[..]` and `:::Footer[..]` produce no article content —
+   they instruct the paged outputs. On screen they are drawn as small chips so the
+   author can see where a page will break and what the running head will say; in
+   print the chips are hidden, because the text is emitted into the @page margin
+   boxes instead and would otherwise appear twice. */
+.luogu-page-break {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  user-select: none;
+}
+.luogu-page-break::before,
+.luogu-page-break::after {
+  content: '';
+  flex: 1;
+  border-top: 2px dashed var(--border-color);
+}
+.luogu-page-break > span {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  letter-spacing: .1em;
+}
+
+.luogu-page-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--luogu-blue, #3498db);
+  background: rgba(52, 152, 219, .07);
+  border-radius: 0 4px 4px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.luogu-page-meta-tag {
+  flex: none;
+  font-weight: 600;
+  color: var(--luogu-blue, #3498db);
+}
+.luogu-page-meta-text {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* The chips are editing aids, never part of the output. */
+@media print {
+  .luogu-page-break,
+  .luogu-page-meta { display: none !important; }
+  /* A section owns its page; never let one leak a stray blank page at the end. */
+  .luogu-page-section > *:last-child { margin-bottom: 0 !important; }
+}
+.print-light .luogu-page-break, .print-light .luogu-page-meta,
+.print-dark .luogu-page-break, .print-dark .luogu-page-meta { display: none !important; }

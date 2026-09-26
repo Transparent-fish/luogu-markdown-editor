@@ -2571,6 +2571,29 @@ const safeStorage = {
       // Make all task checkboxes disabled in exported HTML
       renderedHtml = renderedHtml.replace(/<input type="checkbox" class="luogu-task-checkbox"([^>]*)>/g, '<input type="checkbox" class="luogu-task-checkbox" disabled$1>');
 
+      // Carry the paging markers into the exported file: the reader may well print
+      // it, and the running heads should survive that. Done on a detached container
+      // so the live preview is untouched.
+      let pageCss = '';
+      {
+        const holder = document.createElement('div');
+        holder.innerHTML = renderedHtml;
+        const secs = this._pageSections(holder);
+        if (secs.length > 1 || secs[0].header || secs[0].footer) {
+          pageCss = this._pageCss(secs, 'luogu-exp-p');
+          holder.querySelectorAll(':scope > [data-page-break]').forEach((n) => n.remove());
+          secs.forEach((sec, i) => {
+            const wrap = document.createElement('section');
+            wrap.className = 'luogu-page-section';
+            wrap.style.page = `luogu-exp-p${i}`;
+            if (i > 0) wrap.style.breakBefore = 'page';
+            sec.nodes.forEach((n) => wrap.appendChild(n));
+            holder.appendChild(wrap);
+          });
+          renderedHtml = holder.innerHTML;
+        }
+      }
+
       const title = this.docName.replace(/\.md$/i, '');
       const words = (markdown.match(/[\u4e00-\u9fa5]|[a-zA-Z0-9_]+/g) || []).length;
       const formulas = (markdown.match(/\$\$[\s\S]*?\$\$|\$[^\$\n]+?\$/g) || []).length;
@@ -2612,6 +2635,13 @@ const safeStorage = {
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%233498db'/%3E%3Cstop offset='100%25' stop-color='%231d6fa5'/%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='url(%23g)'/%3E%3Cpath d='M7 11h3l3 7 3-7h3v10h-2.5v-6.5l-2.7 6.5h-1.6L9.5 14.5V21H7V11zm15 0h2v10h-2v-3.5h-2.5v-2H22V11z' fill='%23ffffff'/%3E%3C/svg%3E">
   <style>${katexCss}</style>
   <style>${prismCss}</style>
+  <style>
+    /* Paging markers are editing aids in the app; in the exported file they only
+       matter when the reader prints it. */
+    .luogu-page-break, .luogu-page-meta { display: none; }
+    @media print { .luogu-page-section > *:last-child { margin-bottom: 0; } }
+    ${pageCss}
+  </style>
   <style>
     :root {
       --bg: #f8fafc;
@@ -3341,6 +3371,143 @@ const safeStorage = {
       this.showToast('已导出高颜值独立 HTML 文档！', 'success');
     }
 
+    // ---- Pagination ----------------------------------------------------------
+    //
+    // `:::Pagination` splits the article into sections; `:::Header[..]` /
+    // `:::Footer[..]` at the top of a section set its running head and foot.
+    //
+    // For paged output this is expressed with CSS named pages. Chromium does support
+    // `@page <name> { @top-center { content: ... } }`, and crucially the margin boxes
+    // then repeat on EVERY page a section spans — which a `position: fixed` element
+    // or a repeating <thead> cannot do per-section. Verified against Chromium's
+    // print-to-PDF before choosing this route.
+
+    /** Split the rendered blocks into sections at every page-break marker. */
+    _pageSections(root) {
+      const kids = Array.from(root.children);
+      const sections = [];
+      let cur = { nodes: [], header: '', footer: '' };
+      for (const el of kids) {
+        if (el.hasAttribute && el.hasAttribute('data-page-break')) {
+          sections.push(cur);
+          cur = { nodes: [], header: '', footer: '' };
+          continue;
+        }
+        if (el.hasAttribute && el.hasAttribute('data-page-header')) {
+          cur.header = el.getAttribute('data-page-header') || '';
+          cur.nodes.push(el);
+          continue;
+        }
+        if (el.hasAttribute && el.hasAttribute('data-page-footer')) {
+          cur.footer = el.getAttribute('data-page-footer') || '';
+          cur.nodes.push(el);
+          continue;
+        }
+        cur.nodes.push(el);
+      }
+      sections.push(cur);
+      // A document with no markers at all is a single section with no running heads;
+      // callers use that to skip the whole mechanism.
+      return sections;
+    }
+
+    /** Escape a string for use inside a CSS `content: "..."` declaration. */
+    _cssString(text) {
+      return '"' + String(text)
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, ' ') + '"';
+    }
+
+    /**
+     * Build the `@page` rules for a set of sections.
+     *
+     * `counter(page)` is available inside margin boxes, so a footer may use `{page}`
+     * and `{pages}` placeholders to number the output.
+     */
+    _pageCss(sections, prefix) {
+      const out = [];
+      sections.forEach((sec, i) => {
+        if (!sec.header && !sec.footer) return;
+        const boxes = [];
+        if (sec.header) {
+          boxes.push(`@top-center { content: ${this._cssString(sec.header)};`
+            + ' font-size: 10pt; color: #666; }');
+        }
+        if (sec.footer) {
+          // {page} / {pages} become live counters rather than literal text.
+          const f = sec.footer;
+          const parts = f.split(/(\{page\}|\{pages\})/).filter((x) => x !== '');
+          const content = parts.map((x) => (x === '{page}' ? 'counter(page)'
+            : x === '{pages}' ? 'counter(pages)' : this._cssString(x))).join(' ');
+          boxes.push(`@bottom-center { content: ${content};`
+            + ' font-size: 10pt; color: #666; }');
+        }
+        out.push(`@page ${prefix}${i} { ${boxes.join(' ')} }`);
+      });
+      return out.join('\n');
+    }
+
+    /**
+     * Wrap each section in its own element bound to a named page, so the browser
+     * breaks between them and applies the right running heads. Returns an undo
+     * function; pass a detached container to transform a copy instead.
+     */
+    _applyPagination(root, prefix) {
+      const sections = this._pageSections(root);
+      if (sections.length <= 1 && !sections[0].header && !sections[0].footer) {
+        return { count: 1, css: '', undo: () => {} };
+      }
+
+      const marker = document.createComment('pagination');
+      const parent = root;
+      const wrappers = [];
+      // Remember the original order so the DOM can be put back exactly.
+      const original = Array.from(parent.childNodes);
+
+      sections.forEach((sec, i) => {
+        const wrap = document.createElement('section');
+        wrap.className = 'luogu-page-section';
+        wrap.setAttribute('data-page-section', String(i));
+        // `page:` binds this subtree to the matching @page rule.
+        wrap.style.page = `${prefix}${i}`;
+        if (i > 0) wrap.style.breakBefore = 'page';
+        sec.nodes.forEach((n) => wrap.appendChild(n));
+        parent.appendChild(wrap);
+        wrappers.push(wrap);
+      });
+      // Page-break markers themselves are not content; drop them from the paged view.
+      parent.querySelectorAll(':scope > [data-page-break]').forEach((n) => n.remove());
+
+      const css = this._pageCss(sections, prefix);
+      const styleEl = document.createElement('style');
+      styleEl.setAttribute('data-pagination', '1');
+      styleEl.textContent = css;
+      if (css) document.head.appendChild(styleEl);
+
+      return {
+        count: sections.length,
+        sections,
+        wrappers,
+        css,
+        undo: () => {
+          if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
+          // Restore the exact original child list, including the break markers.
+          wrappers.forEach((w) => { while (w.firstChild) parent.insertBefore(w.firstChild, w); });
+          wrappers.forEach((w) => { if (w.parentNode) w.parentNode.removeChild(w); });
+          original.forEach((n) => parent.appendChild(n));
+          if (marker.parentNode) marker.parentNode.removeChild(marker);
+        },
+      };
+    }
+
+    /** True when the document uses any paging marker at all. */
+    hasPagination() {
+      if (!this.previewEl) return false;
+      return !!this.previewEl.querySelector(
+        '[data-page-break],[data-page-header],[data-page-footer]');
+    }
+
     // ---- Export as a single long PNG -----------------------------------------
     //
     // Uses SnapDOM (vendored, MIT, zero-dependency) rather than html2canvas: it
@@ -3364,11 +3531,25 @@ const safeStorage = {
         return;
       }
 
-      this.showToast('正在生成长图，请稍候……', 'info');
+      const sections = this._pageSections(el);
+      const paged = sections.length > 1;
+      this.showToast(paged
+        ? `正在生成 ${sections.length} 张分页长图，请稍候……`
+        : '正在生成长图，请稍候……', 'info');
       // Yield once so the toast actually paints before the main thread is busy.
       await new Promise((r) => setTimeout(r, 50));
 
       const undo = this._prepareForCapture(el);
+      if (paged) {
+        try {
+          await this._exportImageSections(el, sections, snap);
+        } catch (err) {
+          this.showToast(`长图导出失败：${err && err.message ? err.message : err}`, 'error');
+        } finally {
+          undo();
+        }
+        return;
+      }
       try {
         // Measure AFTER the layout has been unlocked, or a scrollable preview would
         // report only its visible height and the image would stop at the fold.
@@ -3411,6 +3592,53 @@ const safeStorage = {
       } finally {
         undo();
       }
+    }
+
+    /**
+     * One PNG per page section.
+     *
+     * Each section is captured on its own by hiding the others, which keeps every
+     * picture at full scale instead of squeezing the whole article into one canvas —
+     * the very limit that made very long documents come out unreadably small.
+     */
+    async _exportImageSections(el, sections, snap) {
+      const name = (this.docName || '洛谷题解').replace(/\.(md|markdown|txt)$/i, '');
+      const bg = this._captureBg();
+      const hidden = [];
+      const showOnly = (keep) => {
+        while (hidden.length) { const h = hidden.pop(); h.el.style.display = h.prev; }
+        Array.from(el.children).forEach((c) => {
+          if (keep.includes(c)) return;
+          hidden.push({ el: c, prev: c.style.display });
+          c.style.display = 'none';
+        });
+      };
+
+      let done = 0;
+      for (let i = 0; i < sections.length; i++) {
+        const nodes = sections[i].nodes;
+        if (!nodes.length) continue;
+        showOnly(nodes);
+        // Let layout settle before measuring, or the first section keeps the height
+        // of the whole article.
+        await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+        const longest = Math.max(el.scrollWidth, el.scrollHeight);
+        const scale = Math.min(2, MAX_CANVAS_PX / longest);
+        const img = await snap.toPng(el, { scale: 2, backgroundColor: bg });
+
+        const a = document.createElement('a');
+        a.href = img.src;
+        a.download = `${name}-${i + 1}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        done++;
+        // Browsers throttle or drop rapid successive downloads; space them out.
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      showOnly(Array.from(el.children));   // unhide everything
+      this.showToast(`已按分页导出 ${done} 张长图`, 'success');
     }
 
     /** Background colour for the capture, so dark theme does not come out transparent. */
@@ -3492,7 +3720,15 @@ const safeStorage = {
         d.setAttribute('open', '');
       });
 
+      // `:::Pagination` / `:::Header` / `:::Footer` only mean something on paper, so
+      // the sectioning is applied just for the duration of the print and undone
+      // immediately afterwards.
+      const paging = this.previewEl
+        ? this._applyPagination(this.previewEl, 'luogu-print-p')
+        : { undo: () => {} };
+
       window.print();
+      paging.undo();
 
       // Restore states after print dialog closes
       setTimeout(() => {

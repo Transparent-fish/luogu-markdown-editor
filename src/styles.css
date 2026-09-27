@@ -3055,6 +3055,14 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   }
   .print-noi .preview-content pre *,
   .print-noi .preview-content code { color: #000 !important; background: transparent !important; }
+  /* Inline code sits in prose as plain monospace in a printed statement —
+     the on-screen pill (rounded tinted box) looks like a UI widget on paper. */
+  .print-noi .preview-content :not(pre) > code {
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
   .print-noi .preview-content .luogu-code-header { display: none !important; }
 
   /* Thin black grid, the way statement tables are set. The table element carries

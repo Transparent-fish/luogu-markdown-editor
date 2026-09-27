@@ -1963,12 +1963,6 @@ const safeStorage = {
       this.insertAtCursor('\n\n:::Footer[第 {page} 页 / 共 {pages} 页]\n\n');
     }
 
-    /** A page break followed by a fresh section's header and footer. */
-    insertPageSection() {
-      this.insertAtCursor(
-        '\n\n:::Pagination\n\n:::Header[页眉文字]\n:::Footer[第 {page} 页 / 共 {pages} 页]\n\n');
-    }
-
     insertBilibili(id) {
       if (!id) return;
       this.insertAtCursor(`\n\n![](bilibili:${id})\n\n`);

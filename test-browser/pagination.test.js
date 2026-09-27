@@ -162,14 +162,6 @@ const { chromium } = require('playwright');
       ck(re_.test(await src()), `工具栏插入${label}`, JSON.stringify(await src()));
     }
 
-    await setSrc('');
-    await p.evaluate(() => LuoguEditor.insertPageSection());
-    await p.waitForTimeout(300);
-    const whole = await src();
-    ck(/:::Pagination/.test(whole) && /:::Header\[/.test(whole) && /:::Footer\[/.test(whole),
-      '「整套」一次插入三个标记', JSON.stringify(whole));
-    ck(whole.indexOf(':::Pagination') < whole.indexOf(':::Header'), '分页符排在页眉之前');
-
     // A marker glued to preceding text would stop being a leaf directive.
     await setSrc('前面一段文字。', true);
     await p.evaluate(() => LuoguEditor.insertPagination());
@@ -183,7 +175,7 @@ const { chromium } = require('playwright');
     ck(await p.evaluate(() => document.querySelectorAll('[data-page-break]').length === 1),
       '插入的标记能被解析器识别');
 
-    for (const fn of ['insertPagination', 'insertPageHeader', 'insertPageFooter', 'insertPageSection']) {
+    for (const fn of ['insertPagination', 'insertPageHeader', 'insertPageFooter']) {
       ck(await p.evaluate((x) => !!document.querySelector(`[onclick*="${x}"]`), fn),
         `工具栏存在 ${fn} 入口`);
     }
@@ -249,6 +241,41 @@ const { chromium } = require('playwright');
       && !!document.querySelector('[onclick*="printDocument(\'noi\')"]')),
       '导出菜单有 NOI 风格入口');
   }
+
+  // ---- CSP-J 2025 template ----------------------------------------------------
+  {
+    await p.evaluate(() => { window.confirm = () => true; LuoguEditor.insertTemplate('cspj2025'); });
+    await p.waitForTimeout(1600);
+    const t = await p.evaluate(() => ({
+      katex: document.querySelectorAll('#previewContent .katex').length,
+      katexErr: [...document.querySelectorAll('#previewContent .katex')]
+        .filter((k) => /#cc0000/.test(k.innerHTML)).length,
+      tuack: document.querySelectorAll('#previewContent .luogu-tuack-table').length,
+      merged: document.querySelectorAll('#previewContent td[rowspan]').length,
+      breaks: document.querySelectorAll('#previewContent [data-page-break]').length,
+      headers: [...document.querySelectorAll('#previewContent [data-page-header]')]
+        .map((e) => e.getAttribute('data-page-header')),
+      sections: LuoguEditor._pageSections(document.getElementById('previewContent')).length,
+      raw: /:::(Pagination|Header|Footer)|::cute-table/.test(
+        document.getElementById('previewContent').textContent),
+    }));
+    ck(t.katex > 50 && t.katexErr === 0, 'CSP-J 模板公式全部渲染无误',
+      `${t.katex} 个公式 / ${t.katexErr} 个错误`);
+    ck(t.tuack === 2 && t.merged > 0, '含 tuack 数据范围表与合并单元格',
+      `tuack=${t.tuack} merged=${t.merged}`);
+    ck(t.breaks === 2 && t.sections === 3, '分成 3 个区块（封面 + 两题）',
+      `breaks=${t.breaks} sections=${t.sections}`);
+    ck(t.headers.length === 3 && t.headers.every((h) => /CSP-J 2025/.test(h)),
+      '每个区块都有自己的页眉', JSON.stringify(t.headers));
+    ck(!t.raw, '模板标记未以原文泄漏');
+    ck(await p.evaluate(() => !!document.querySelector('[onclick*="cspj2025"]')),
+      '模板菜单有 CSP-J 2025 入口');
+    // The removed "整套" button must be gone from both the menu and the API.
+    ck(await p.evaluate(() => !document.querySelector('[onclick*="insertPageSection"]')
+      && typeof LuoguEditor.insertPageSection === 'undefined'),
+      '「分页+页眉+页脚（整套）」按钮与方法均已移除');
+  }
+
 
 
 

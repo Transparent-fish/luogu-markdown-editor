@@ -1948,6 +1948,31 @@ const safeStorage = {
       this.insertAtCursor(`\n\n:::align{${mode}}\n这里是${mode === 'center' ? '居中' : '居右'}排版的内容\n:::\n\n`);
     }
 
+    // ---- Paging markers ------------------------------------------------------
+    //
+    // These are leaf directives on a line of their own. They must not be glued to
+    // the surrounding text, so each insert is padded with blank lines.
+
+    insertPagination() {
+      this.insertAtCursor('\n\n:::Pagination\n\n');
+    }
+
+    insertPageHeader() {
+      this.insertAtCursor('\n\n:::Header[页眉文字]\n\n');
+    }
+
+    insertPageFooter() {
+      // Seeded with the page counters, since that is the main reason to want a
+      // footer and the placeholders are not otherwise discoverable.
+      this.insertAtCursor('\n\n:::Footer[第 {page} 页 / 共 {pages} 页]\n\n');
+    }
+
+    /** A page break followed by a fresh section's header and footer. */
+    insertPageSection() {
+      this.insertAtCursor(
+        '\n\n:::Pagination\n\n:::Header[页眉文字]\n:::Footer[第 {page} 页 / 共 {pages} 页]\n\n');
+    }
+
     insertBilibili(id) {
       if (!id) return;
       this.insertAtCursor(`\n\n![](bilibili:${id})\n\n`);

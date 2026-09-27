@@ -222,6 +222,19 @@
         </div>
       </div>
 
+      <div class="tool-dropdown">
+        <button class="tool-btn"  title="分页、页眉与页脚（用于打印 / PDF / 长图分页）" aria-label="分页、页眉与页脚">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18"/><path d="M3 19h18"/><rect x="6" y="9" width="12" height="6" rx="1"/><path d="M3 12h2"/><path d="M19 12h2"/></svg>
+          <svg viewBox="0 0 24 24" style="width:8px;height:8px;" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" onclick="LuoguEditor.insertPagination()">✂️ :::Pagination 在此分页</button>
+          <button class="dropdown-item" onclick="LuoguEditor.insertPageHeader()">🔝 :::Header[…] 本区块页眉</button>
+          <button class="dropdown-item" onclick="LuoguEditor.insertPageFooter()">🔟 :::Footer[…] 本区块页脚（带页码）</button>
+          <button class="dropdown-item" onclick="LuoguEditor.insertPageSection()">📄 分页 + 页眉 + 页脚（整套）</button>
+        </div>
+      </div>
+
       <button class="tool-btn" onclick="LuoguEditor.openModal('bilibiliModal')"  title="插入 Bilibili 视频 ![](bilibili:...)" aria-label="插入 Bilibili 视频 ![](bilibili:...)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="10.5" y2="5"/><line x1="17" y1="2" x2="13.5" y2="5"/><circle cx="8" cy="11" r="1"/><circle cx="16" cy="11" r="1"/><path d="M9 16c1.5 1 4.5 1 6 0"/></svg>
       </button>
@@ -768,7 +781,7 @@
 
       <h4 style="color:var(--luogu-blue); margin-top: 16px;">📄 分页与页眉页脚：</h4>
       <ul style="padding-left: 20px; margin-top: 6px;">
-        <li>各占一行，无需闭合的 <code>:::</code>：
+        <li>工具栏「分页」按钮（表格右侧的 ☰ 图标）可一键插入，也可手写。各占一行，无需闭合的 <code>:::</code>：
           <br /><code>:::Pagination</code> —— 在此处分页；
           <br /><code>:::Header[页眉文字]</code> / <code>:::Footer[页脚文字]</code> —— 写在一个区块开头，设置该区块的页眉页脚。</li>
         <li>页脚里可用 <code>{page}</code> 与 <code>{pages}</code> 插入当前页码与总页数，例如

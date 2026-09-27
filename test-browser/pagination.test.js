@@ -138,6 +138,58 @@ const { chromium } = require('playwright');
     && !/-1\.png$/.test(window.__pngs[0])), '无分页时仍为单张、不加序号',
     JSON.stringify(await p.evaluate(() => window.__pngs)));
 
+  // ---- toolbar inserts --------------------------------------------------------
+  {
+    const setSrc = async (v, caretEnd) => {
+      await p.evaluate(([t, c]) => {
+        const ta = document.getElementById('editorTextarea');
+        ta.value = t; ta.dispatchEvent(new Event('input', { bubbles: true }));
+        ta.focus();
+        if (c) ta.setSelectionRange(ta.value.length, ta.value.length);
+      }, [v, !!caretEnd]);
+      await p.waitForTimeout(220);
+    };
+    const src = () => p.evaluate(() => document.getElementById('editorTextarea').value);
+
+    for (const [fn, re_, label] of [
+      ['insertPagination', /^\s*:::Pagination\s*$/m, '分页符'],
+      ['insertPageHeader', /^\s*:::Header\[页眉文字\]\s*$/m, '页眉'],
+      ['insertPageFooter', /^\s*:::Footer\[第 \{page\} 页 \/ 共 \{pages\} 页\]\s*$/m, '页脚（预填页码）'],
+    ]) {
+      await setSrc('');
+      await p.evaluate((f) => LuoguEditor[f](), fn);
+      await p.waitForTimeout(260);
+      ck(re_.test(await src()), `工具栏插入${label}`, JSON.stringify(await src()));
+    }
+
+    await setSrc('');
+    await p.evaluate(() => LuoguEditor.insertPageSection());
+    await p.waitForTimeout(300);
+    const whole = await src();
+    ck(/:::Pagination/.test(whole) && /:::Header\[/.test(whole) && /:::Footer\[/.test(whole),
+      '「整套」一次插入三个标记', JSON.stringify(whole));
+    ck(whole.indexOf(':::Pagination') < whole.indexOf(':::Header'), '分页符排在页眉之前');
+
+    // A marker glued to preceding text would stop being a leaf directive.
+    await setSrc('前面一段文字。', true);
+    await p.evaluate(() => LuoguEditor.insertPagination());
+    await p.waitForTimeout(300);
+    ck(/^\s*:::Pagination\s*$/m.test(await src()), '接在正文后仍独占一行',
+      JSON.stringify(await src()));
+
+    // End to end: what the button inserts must be what the parser understands.
+    await p.evaluate(() => { LuoguEditor.render(); LuoguEditor.setViewMode('preview'); });
+    await p.waitForTimeout(600);
+    ck(await p.evaluate(() => document.querySelectorAll('[data-page-break]').length === 1),
+      '插入的标记能被解析器识别');
+
+    for (const fn of ['insertPagination', 'insertPageHeader', 'insertPageFooter', 'insertPageSection']) {
+      ck(await p.evaluate((x) => !!document.querySelector(`[onclick*="${x}"]`), fn),
+        `工具栏存在 ${fn} 入口`);
+    }
+  }
+
+
   ck(errs.length === 0, '无 JS 报错', errs.slice(0, 2).join(' | '));
   console.log(`\n分页与页眉页脚 ${pass + fail} 项，失败 ${fail}`);
   await b.close();

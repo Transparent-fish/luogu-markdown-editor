@@ -30,10 +30,6 @@ const safeStorage = {
 (function (global) {
   'use strict';
 
-  // A browser canvas cannot exceed 32767px on a side; beyond that it silently
-  // returns a truncated image rather than throwing.
-  const MAX_CANVAS_PX = 32767;
-
   class LuoguEditorApp {
     constructor() {
       const ParserClass = typeof LuoguParser !== 'undefined' ? LuoguParser : (global.LuoguParser || (typeof window !== 'undefined' ? window.LuoguParser : null));
@@ -3556,60 +3552,67 @@ const safeStorage = {
         return;
       }
 
-      const sections = this._pageSections(el);
-      const paged = sections.length > 1;
-      this.showToast(paged
-        ? `正在生成 ${sections.length} 张分页长图，请稍候……`
-        : '正在生成长图，请稍候……', 'info');
-      // Yield once so the toast actually paints before the main thread is busy.
-      await new Promise((r) => setTimeout(r, 50));
-
       const undo = this._prepareForCapture(el);
-      if (paged) {
-        try {
-          await this._exportImageSections(el, sections, snap);
-        } catch (err) {
-          this.showToast(`长图导出失败：${err && err.message ? err.message : err}`, 'error');
-        } finally {
-          undo();
-        }
-        return;
-      }
       try {
-        // Measure AFTER the layout has been unlocked, or a scrollable preview would
-        // report only its visible height and the image would stop at the fold.
-        const w = el.scrollWidth;
-        const h = el.scrollHeight;
-        const longest = Math.max(w, h);
+        const limit = this._canvasLimit();
+        const w0 = el.scrollWidth;
+        const h0 = el.scrollHeight;
 
-        // Ask for retina and let SnapDOM clamp: it already fits the result inside the
-        // canvas limit by shrinking the whole image proportionally (it never
-        // truncates). Pre-shrinking here as well multiplied the two reductions
-        // together and produced images half the size they needed to be.
-        const WANT = 2;
-        const scale = Math.min(WANT, MAX_CANVAS_PX / longest);   // what we will get
-        // Below 1 the picture ends up smaller than the text is on screen.
-        const shrunk = scale < 1;
+        // Horizontal scale is capped by the width; anything taller is handled by
+        // slicing rather than by shrinking, so the text stays at full resolution.
+        const scale = Math.min(2, limit / Math.max(1, w0));
+        const maxPieceCss = Math.max(1, Math.floor(limit / scale));
 
-        const img = await snap.toPng(el, { scale: WANT, backgroundColor: this._captureBg() });
-        const url = img.src;
-        const name = (this.docName || '洛谷题解').replace(/\.(md|markdown|txt)$/i, '');
+        const pieces = this._imagePieces(el, h0, maxPieceCss);
+        this.showToast(pieces.length > 1
+          ? `正在生成 ${pieces.length} 张图，请稍候……`
+          : '正在生成长图，请稍候……', 'info');
+        await new Promise((r) => setTimeout(r, 50));
 
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${name}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        // One capture, many crops: re-capturing per piece would repeat all the
+        // style/font inlining work and risk the pieces disagreeing if anything
+        // reflowed in between.
+        const capture = await snap(el, { backgroundColor: this._captureBg() });
+        const meta = capture.meta || { contentX: 0, contentY: 0 };
+        const base = (this.docName || '洛谷题解').replace(/\.(md|markdown|txt)$/i, '');
 
-        if (shrunk) {
+        for (let i = 0; i < pieces.length; i++) {
+          const pc = pieces[i];
+          const blob = await capture.toBlob({
+            format: 'png',
+            // `dpr: 1` is essential. It defaults to devicePixelRatio, so on a retina
+            // screen `scale: 2` would silently render at 4x — twice the pixels this
+            // code budgeted for, hitting the canvas ceiling half as far in.
+            scale,
+            dpr: 1,
+            crop: {
+              x: meta.contentX || 0,
+              y: (meta.contentY || 0) + pc.top,
+              width: w0,
+              height: pc.height,
+            },
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          // A base64 data URL for a multi-megabyte PNG is slow to build and to hand
+          // to the download; an object URL is just a handle.
+          a.download = pieces.length > 1 ? `${base}-${i + 1}.png` : `${base}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          if (pieces.length > 1) await new Promise((r) => setTimeout(r, 350));
+        }
+
+        if (pieces.length > 1) {
           this.showToast(
-            `文档过长（${Math.round(h)}px），受浏览器 ${MAX_CANVAS_PX}px 画布上限所限，`
-            + `整图已压到 ${scale.toFixed(2)}x，文字会偏小。想要清晰版建议改用「打印 / 导出 PDF」，`
-            + '或分几段导出。', 'info');
+            `已导出 ${pieces.length} 张图（每张 ${scale.toFixed(2)}x 全分辨率${
+              pieces.some((x) => x.forced) ? '，其中含按长度自动切分的片段' : ''}）`,
+            'success');
         } else {
           this.showToast(
-            `长图已导出（${Math.round(w * scale)}×${Math.round(h * scale)}，${scale.toFixed(2)}x）`,
+            `长图已导出（${Math.round(w0 * scale)}×${Math.round(h0 * scale)}，${scale.toFixed(2)}x）`,
             'success');
         }
       } catch (err) {
@@ -3620,50 +3623,91 @@ const safeStorage = {
     }
 
     /**
-     * One PNG per page section.
+     * Largest canvas edge this browser will actually produce.
      *
-     * Each section is captured on its own by hiding the others, which keeps every
-     * picture at full scale instead of squeezing the whole article into one canvas —
-     * the very limit that made very long documents come out unreadably small.
+     * Chrome and Firefox allow 32767px; Safari and iOS stop at 16384 and fail
+     * silently past it, so the value is probed rather than assumed.
      */
-    async _exportImageSections(el, sections, snap) {
-      const name = (this.docName || '洛谷题解').replace(/\.(md|markdown|txt)$/i, '');
-      const bg = this._captureBg();
-      const hidden = [];
-      const showOnly = (keep) => {
-        while (hidden.length) { const h = hidden.pop(); h.el.style.display = h.prev; }
-        Array.from(el.children).forEach((c) => {
-          if (keep.includes(c)) return;
-          hidden.push({ el: c, prev: c.style.display });
-          c.style.display = 'none';
-        });
-      };
-
-      let done = 0;
-      for (let i = 0; i < sections.length; i++) {
-        const nodes = sections[i].nodes;
-        if (!nodes.length) continue;
-        showOnly(nodes);
-        // Let layout settle before measuring, or the first section keeps the height
-        // of the whole article.
-        await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
-
-        const longest = Math.max(el.scrollWidth, el.scrollHeight);
-        const scale = Math.min(2, MAX_CANVAS_PX / longest);
-        const img = await snap.toPng(el, { scale: 2, backgroundColor: bg });
-
-        const a = document.createElement('a');
-        a.href = img.src;
-        a.download = `${name}-${i + 1}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        done++;
-        // Browsers throttle or drop rapid successive downloads; space them out.
-        await new Promise((r) => setTimeout(r, 350));
+    _canvasLimit() {
+      if (this._canvasLimitCache) return this._canvasLimitCache;
+      let found = 8192;
+      for (const n of [32767, 16384, 8192]) {
+        try {
+          const c = document.createElement('canvas');
+          c.width = 1; c.height = n;
+          const ctx = c.getContext('2d');
+          if (!ctx) continue;
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, n - 1, 1, 1);
+          const d = ctx.getImageData(0, n - 1, 1, 1).data;
+          if (d[3] !== 0) { found = n; break; }
+        } catch (e) { /* try the next size down */ }
       }
-      showOnly(Array.from(el.children));   // unhide everything
-      this.showToast(`已按分页导出 ${done} 张长图`, 'success');
+      this._canvasLimitCache = found;
+      return found;
+    }
+
+    /**
+     * Where to cut the picture.
+     *
+     * Author-placed `:::Pagination` markers win, because those cuts are meaningful.
+     * Any resulting piece still taller than one canvas is then sliced mechanically,
+     * which keeps the text at full resolution instead of shrinking the whole
+     * document to fit — the failure mode this replaces.
+     */
+    _imagePieces(el, totalCss, maxPieceCss) {
+      const sections = this._pageSections(el);
+      const bounds = [];
+
+      if (sections.length > 1) {
+        const top0 = el.getBoundingClientRect().top - el.scrollTop;
+        sections.forEach((sec) => {
+          const nodes = sec.nodes.filter((n) => n.getBoundingClientRect);
+          if (!nodes.length) return;
+          const first = nodes[0].getBoundingClientRect();
+          const last = nodes[nodes.length - 1].getBoundingClientRect();
+          bounds.push({ top: Math.max(0, first.top - top0), height: Math.max(1, last.bottom - first.top) });
+        });
+      }
+      if (!bounds.length) bounds.push({ top: 0, height: totalCss });
+
+      // Candidate cut lines: the bottom edge of every top-level block. Slicing on one
+      // of these avoids guillotining a line of text through the middle, which a fixed
+      // step would do (verified: a plain step cut "行号 0038" in half).
+      const top0 = el.getBoundingClientRect().top - el.scrollTop;
+      const edges = Array.from(el.children)
+        .filter((c) => c.getBoundingClientRect && c.offsetParent !== null)
+        .map((c) => c.getBoundingClientRect().bottom - top0)
+        .filter((y) => y > 0)
+        .sort((a, b2) => a - b2);
+
+      const out = [];
+      for (const b of bounds) {
+        if (b.height <= maxPieceCss) { out.push({ ...b, forced: false }); continue; }
+        let y = b.top;
+        const end = b.top + b.height;
+        while (y < end - 0.5) {
+          const hardStop = Math.min(y + maxPieceCss, end);
+          // Highest block edge that still fits in this piece.
+          let cut = 0;
+          for (const e of edges) { if (e > y + 1 && e <= hardStop) cut = e; else if (e > hardStop) break; }
+          // No block boundary fits (one enormous block): fall back to a flat cut.
+          if (!cut) cut = hardStop;
+          out.push({ top: y, height: cut - y, forced: true });
+          y = cut;
+        }
+      }
+
+      // Snapping to block edges can leave a sliver at the end (a 28px strip of
+      // nothing). Fold anything that small back into the piece before it.
+      const MIN_PIECE = 40;
+      for (let i = out.length - 1; i > 0; i--) {
+        if (out[i].height < MIN_PIECE) {
+          out[i - 1].height += out[i].height;
+          out.splice(i, 1);
+        }
+      }
+      return out;
     }
 
     /** Background colour for the capture, so dark theme does not come out transparent. */

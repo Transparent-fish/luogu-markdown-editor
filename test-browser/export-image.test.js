@@ -37,10 +37,12 @@ const fs = require('fs');
   await p.goto(APP, { waitUntil: 'networkidle' });
   await p.evaluate(() => {
     window.__caught = null;
+    window.__all = [];
     const oc = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function () {
       if (this.download && /\.png$/.test(this.download)) {
         window.__caught = { name: this.download, href: this.href };
+        window.__all.push({ name: this.download, href: this.href });
         return;
       }
       return oc.apply(this, arguments);
@@ -52,7 +54,7 @@ const fs = require('fs');
 
   const run = async (md, label, theme) => {
     await p.evaluate(([v, th]) => {
-      window.__caught = null;
+      window.__caught = null; window.__all = [];
       document.documentElement.setAttribute('data-theme', th);
       const ta = document.getElementById('editorTextarea');
       ta.value = v; ta.dispatchEvent(new Event('input', { bubbles: true }));
@@ -81,7 +83,17 @@ const fs = require('fs');
                leftoverStyle: !!document.querySelector('style')
                  && [...document.querySelectorAll('style')].some((x) => /scrollbar-width:none!important/.test(x.textContent)) };
     });
-    const buf = Buffer.from(got.href.split(',')[1], 'base64');
+    // 下载链接现在是 blob: URL（不再是多兆字节的 base64 data URL），
+    // 所以要在页面里取回内容再读尺寸。
+    const b64 = await p.evaluate(async (u) => {
+      const r = await fetch(u); const bl = await r.blob();
+      return await new Promise((res) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result.split(',')[1]);
+        fr.readAsDataURL(bl);
+      });
+    }, got.href);
+    const buf = Buffer.from(b64, 'base64');
     if (process.env.KEEP_SHOTS) fs.writeFileSync(`/tmp/w-${label}.png`, buf);
     // PNG 头部读尺寸
     const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
@@ -106,17 +118,11 @@ const fs = require('fs');
     ck(true, `托管版仅同源取本地字体用于内嵌（${net.length} 个同源请求）`);
   }
 
-  console.log('\n=== 2) 长文档：是否完整、是否自动降 scale ===');
+  console.log('\n=== 2) 长文档：切片而非缩小 ===');
   for (const n of [60, 300, 700]) {
     const md = Array.from({ length: n }, (_, i) => `## 第 ${i} 节\n\n内容含 $O(n)$ 说明文字。`).join('\n\n');
-    const rr = await run(md, `long${n}`);
-    const srcH = await p.evaluate(() => document.getElementById('previewContent').scrollHeight);
-    console.log(`  ${String(n).padStart(3)} 节: 内容 ${srcH}px → 图 ${rr.w}×${rr.h} (${rr.kb}KB, ${rr.ms}ms)`);
-    ck(rr.h <= 32767, `未超画布上限`, String(rr.h));
-    // 覆盖率：图高/ (内容高*scale) 应接近 1；至少不能只截到首屏
-    // SnapDOM 超限时按比例整体缩小而非截断，所以用宽高比判断"是否完整"。
-    // 尺寸必须在与截图相同的条件下测量：导出会去掉滚动同步用的尾部留白，
-    // 用带留白的高度去比会得出"被截断"的错误结论。
+    await run(md, `long${n}`);
+    // 在与截图相同的条件下测量内容尺寸
     const dim = await p.evaluate(() => {
       const el = document.getElementById('previewContent');
       const save = [el.style.height, el.style.maxHeight, el.style.overflow, el.style.paddingBottom];
@@ -126,9 +132,25 @@ const fs = require('fs');
       [el.style.height, el.style.maxHeight, el.style.overflow, el.style.paddingBottom] = save;
       return d;
     });
-    const arSrc = dim.h / dim.w, arImg = rr.h / rr.w;
-    ck(Math.abs(arSrc - arImg) / arSrc < 0.02, `完整成图（宽高比一致，非截断）`,
-      `内容 ${dim.w}×${dim.h} 比 ${arSrc.toFixed(2)} vs 图 ${rr.w}×${rr.h} 比 ${arImg.toFixed(2)}`);
+    const all = await p.evaluate(async () => {
+      const out = [];
+      for (const x of window.__all) {
+        const r = await fetch(x.href); const bl = await r.blob();
+        const bmp = await createImageBitmap(bl);
+        out.push({ w: bmp.width, h: bmp.height });
+      }
+      return out;
+    });
+    const scale = all[0].w / dim.w;
+    const covered = all.reduce((a, x) => a + x.h, 0) / scale;
+    console.log(`  ${String(n).padStart(3)} 节: 内容 ${dim.w}×${dim.h} → ${all.length} 片，`
+      + `每片 ${all[0].w} 宽，倍率 ${scale.toFixed(2)}x`);
+    ck(all.every((x) => x.h <= 32767 && x.w <= 32767), '每片都在画布上限内',
+      JSON.stringify(all.map((x) => x.h)));
+    // 关键差别：不再整体缩小，每片都是 2x
+    ck(Math.abs(scale - 2) < 0.05, '保持 2x 全分辨率（不再整体缩小）', `${scale.toFixed(2)}x`);
+    ck(Math.abs(covered - dim.h) / dim.h < 0.02, '所有切片合起来覆盖整篇',
+      `覆盖 ${Math.round(covered)}px vs 内容 ${dim.h}px`);
   }
 
   console.log('\n=== 3) 暗色主题 ===');

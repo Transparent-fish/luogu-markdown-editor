@@ -276,6 +276,35 @@ const { chromium } = require('playwright');
       '「分页+页眉+页脚（整套）」按钮与方法均已移除');
   }
 
+  // ---- dark theme must not leave UA widgets light -----------------------------
+  {
+    // An unchecked <input type="checkbox"> is painted by the browser, not by our
+    // CSS. Without `color-scheme: dark` it stays a solid white square — obvious on
+    // a dark preview and carried straight into the dark PDF.
+    await setDoc('- [ ] 未完成\n- [x] 已完成');
+    await p.evaluate(() => LuoguEditor.setTheme('dark'));
+    await p.waitForTimeout(400);
+    ck(await p.evaluate(() =>
+      getComputedStyle(document.documentElement).colorScheme === 'dark'),
+      '暗色主题声明 color-scheme: dark（屏幕）');
+
+    await p.emulateMedia({ media: 'print' });
+    await p.evaluate(() => document.documentElement.classList.add('print-dark'));
+    await p.waitForTimeout(350);
+    ck(await p.evaluate(() =>
+      getComputedStyle(document.documentElement).colorScheme === 'dark'),
+      '暗色打印同样声明 color-scheme: dark');
+
+    await p.evaluate(() => document.documentElement.classList.remove('print-dark'));
+    await p.emulateMedia({ media: 'screen' });
+    await p.evaluate(() => LuoguEditor.setTheme('light'));
+    await p.waitForTimeout(350);
+    ck(await p.evaluate(() =>
+      getComputedStyle(document.documentElement).colorScheme !== 'dark'),
+      '亮色主题不受影响');
+  }
+
+
 
 
 

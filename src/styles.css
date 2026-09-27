@@ -47,6 +47,10 @@
 
 /* Dark Theme */
 [data-theme="dark"] {
+  /* Tell the browser this page is dark so it paints UA-drawn widgets to match.
+     Without it an unchecked <input type="checkbox"> stays a solid white square —
+     glaring on a dark preview, and carried straight into the dark PDF. */
+  color-scheme: dark;
   --bg-primary: #1e1e1e;
   --bg-secondary: #252526;
   --bg-tertiary: #2d2d30;
@@ -3117,4 +3121,10 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   }
   .print-noi .preview-content a { color: #000 !important; text-decoration: none !important; }
   .print-noi .preview-content hr { border-top: .6pt solid #000 !important; }
+}
+
+/* The print context does not inherit the page's colour scheme, so the dark PDF
+   needs it declared again — otherwise the checkbox reverts to a white square. */
+@media print {
+  html.print-dark, .print-dark body { color-scheme: dark; }
 }

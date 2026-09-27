@@ -2998,3 +2998,115 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
 }
 .print-light .luogu-page-break, .print-light .luogu-page-meta,
 .print-dark .luogu-page-break, .print-dark .luogu-page-meta { display: none !important; }
+
+/* ---- NOI / tuack style print theme -----------------------------------------
+   Modelled on official NOI problem statements: serif throughout, light sample
+   boxes rather than a dark editor theme, thin black table grids, and a running
+   head plus "第 N 页 共 M 页" foot. Applied only when printing with this theme
+   chosen, so the default PDF is untouched. */
+.print-noi .preview-content,
+.print-noi .preview-content * {
+  /* CJK serif first; the Latin faces are listed ahead so digits and formulas fall
+     to Times rather than to a CJK face's half-width glyphs. */
+  font-family: "Times New Roman", Times, "SimSun", "Songti SC",
+    "Source Han Serif SC", "Noto Serif CJK SC", "STSong", serif !important;
+}
+/* Maths and code must keep their own faces. */
+.print-noi .preview-content .katex,
+.print-noi .preview-content .katex * { font-family: KaTeX_Main, "Times New Roman", serif !important; }
+.print-noi .preview-content code,
+.print-noi .preview-content pre,
+.print-noi .preview-content pre * {
+  font-family: Consolas, "Courier New", "DejaVu Sans Mono", monospace !important;
+}
+
+@media print {
+  .print-noi html, .print-noi body,
+  html.print-noi, body.print-noi { font-size: 10.5pt !important; }
+
+  .print-noi .preview-content { line-height: 1.5 !important; }
+
+  /* Headings: plain bold serif, no rules or colour — NOI statements use 【…】
+     section titles with nothing decorative around them. */
+  .print-noi .preview-content h1,
+  .print-noi .preview-content h2,
+  .print-noi .preview-content h3,
+  .print-noi .preview-content h4 {
+    border: none !important;
+    color: #000 !important;
+    font-weight: bold !important;
+    padding: 0 !important;
+    margin: 1.1em 0 .5em !important;
+    page-break-after: avoid !important;
+  }
+  .print-noi .preview-content h1 { font-size: 15pt !important; text-align: center !important; }
+  .print-noi .preview-content h2 { font-size: 12.5pt !important; }
+  .print-noi .preview-content h3 { font-size: 11.5pt !important; }
+
+  /* Sample I/O reads as a bordered light box, not the editor's dark theme. */
+  .print-noi .preview-content .luogu-code-block-wrapper,
+  .print-noi .preview-content pre,
+  .print-noi .preview-content .luogu-code-pre {
+    background: #fff !important;
+    color: #000 !important;
+    border: 1px solid #000 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .print-noi .preview-content pre *,
+  .print-noi .preview-content code { color: #000 !important; background: transparent !important; }
+  .print-noi .preview-content .luogu-code-header { display: none !important; }
+
+  /* Thin black grid, the way statement tables are set. The table element carries
+     its own border in the tuack / three-line styles, and the tuack divider column
+     is coloured separately — both need overriding or a blue frame survives on an
+     otherwise monochrome page. */
+  .print-noi .preview-content table,
+  .print-noi .preview-content table.luogu-tuack-table,
+  .print-noi .preview-content table.luogu-three-table,
+  .print-noi .preview-content table.luogu-cute-centered-table {
+    border-collapse: collapse !important;
+    border-color: #000 !important;
+  }
+  .print-noi .preview-content table.luogu-tuack-table[data-tuack-col] th,
+  .print-noi .preview-content table.luogu-tuack-table[data-tuack-col] td,
+  .print-noi .preview-content .luogu-tuack-table th,
+  .print-noi .preview-content .luogu-tuack-table td,
+  .print-noi .preview-content .luogu-three-table th,
+  .print-noi .preview-content .luogu-three-table td {
+    border-color: #000 !important;
+  }
+  .print-noi .preview-content th,
+  .print-noi .preview-content td {
+    border: .6pt solid #000 !important;
+    background: #fff !important;
+    color: #000 !important;
+    padding: 3pt 6pt !important;
+  }
+  .print-noi .preview-content thead th { font-weight: bold !important; }
+  .print-noi .preview-content tr:nth-child(even) td { background: #fff !important; }
+
+  /* Callouts flatten to a plain ruled block; coloured panels look wrong on paper. */
+  .print-noi .preview-content details.luogu-callout {
+    border: none !important;
+    border-left: 1.5pt solid #000 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+  .print-noi .preview-content .luogu-callout-summary {
+    background: #fff !important;
+    color: #000 !important;
+    border: none !important;
+  }
+  .print-noi .preview-content .luogu-callout-arrow,
+  .print-noi .preview-content .luogu-callout-icon { display: none !important; }
+
+  .print-noi .preview-content blockquote {
+    border-left: 1.5pt solid #000 !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .print-noi .preview-content a { color: #000 !important; text-decoration: none !important; }
+  .print-noi .preview-content hr { border-top: .6pt solid #000 !important; }
+}

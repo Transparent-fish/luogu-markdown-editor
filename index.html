@@ -85,6 +85,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
             <span>打印 / 导出 PDF</span>
           </button>
+          <button class="dropdown-item" onclick="LuoguEditor.printDocument('noi')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 3h16v18H4z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>
+            <span>打印 / 导出 PDF（NOI 风格）</span>
+          </button>
         </div>
       </div>
 
@@ -777,6 +781,17 @@
         <li><code>Ctrl + Shift + M</code>：插入行间数学公式 <code>$$</code>　<span style="opacity:.7">（本编辑器特有）</span></li>
         <li><code>Ctrl + Z</code> / <code>Ctrl + Y</code>：撤销 / 重做</li>
         <li><code>Tab</code> / <code>Shift + Tab</code>：增加 / 减少 4 空格缩进</li>
+      </ul>
+
+      <h4 style="color:var(--luogu-blue); margin-top: 16px;">🏛️ NOI 风格 PDF：</h4>
+      <ul style="padding-left: 20px; margin-top: 6px;">
+        <li>「导出」→「打印 / 导出 PDF（NOI 风格）」，按官方 NOI 题面的观感排版：
+          全文衬线字体、样例框改为白底黑框、表格细黑线、标题去掉彩色与下划线。</li>
+        <li>自动加页眉（文档名）与页脚「第 N 页 共 M 页」；若自己写了
+          <code>:::Header</code> / <code>:::Footer</code>，则该区块以自己的为准。</li>
+        <li>配合 <code>::cute-table{tuack}</code> 与 <code>{three}</code> 使用，
+          数据范围表会呈现 tuack 风格的分栏竖线。</li>
+        <li>原有的「打印 / 导出 PDF」不受影响，仍是彩色主题。</li>
       </ul>
 
       <h4 style="color:var(--luogu-blue); margin-top: 16px;">📄 分页与页眉页脚：</h4>

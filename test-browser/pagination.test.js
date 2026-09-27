@@ -189,6 +189,68 @@ const { chromium } = require('playwright');
     }
   }
 
+  // ---- NOI / tuack print theme -----------------------------------------------
+  {
+    await setDoc('# 挑战 NPC\n\n## 【输入格式】\n\n从文件读入。\n\n```plain\n3\n1 2\n```\n\n'
+      + '::cute-table{tuack}\n\n| 测试点 | $n\\le$ |\n|:-:|:-:|\n| $1$ | $100$ |\n\n'
+      + ':::info[提示]\n注意常数。\n:::');
+    await p.emulateMedia({ media: 'print' });
+
+    const read = async () => p.evaluate(() => {
+      const q = (sel) => document.querySelector(sel);
+      const cs = (el, prop) => el ? getComputedStyle(el)[prop] : null;
+      return {
+        bodyFont: cs(q('#previewContent p'), 'fontFamily'),
+        codeBg: cs(q('#previewContent pre'), 'backgroundColor'),
+        codeColor: cs(q('#previewContent pre'), 'color'),
+        tableBorder: cs(q('#previewContent .luogu-tuack-table'), 'borderTopColor'),
+        cellBorder: cs(q('#previewContent .luogu-tuack-table td'), 'borderTopColor'),
+        h2Border: cs(q('#previewContent h2'), 'borderBottomStyle'),
+        h2Color: cs(q('#previewContent h2'), 'color'),
+        calloutBg: cs(q('#previewContent details.luogu-callout'), 'backgroundColor'),
+        katexFont: cs(q('#previewContent .katex'), 'fontFamily'),
+      };
+    });
+
+    // Default theme first, as the baseline to contrast against.
+    await p.evaluate(() => {
+      document.documentElement.classList.remove('print-noi');
+      document.documentElement.classList.add('print-light');
+    });
+    await p.waitForTimeout(300);
+    const std = await read();
+
+    await p.evaluate(() => document.documentElement.classList.add('print-noi'));
+    await p.waitForTimeout(300);
+    const noi = await read();
+
+    ck(/serif/i.test(noi.bodyFont) && !/serif/i.test(std.bodyFont) || noi.bodyFont !== std.bodyFont,
+      'NOI 主题改用衬线正文', `${std.bodyFont} → ${noi.bodyFont}`);
+    ck(noi.codeBg === 'rgb(255, 255, 255)', '样例框改为白底', noi.codeBg);
+    ck(noi.codeColor === 'rgb(0, 0, 0)', '样例文字改为黑色', noi.codeColor);
+    ck(noi.cellBorder === 'rgb(0, 0, 0)', '表格单元格黑色细线', noi.cellBorder);
+    // The table element carries its own border in tuack style; it must go black too,
+    // otherwise a blue frame survives on an otherwise monochrome page.
+    ck(noi.tableBorder === 'rgb(0, 0, 0)', '表格外框也是黑色（非蓝）', noi.tableBorder);
+    ck(noi.h2Border === 'none', '标题去掉装饰性下划线', noi.h2Border);
+    ck(noi.h2Color === 'rgb(0, 0, 0)', '标题为黑色', noi.h2Color);
+    ck(noi.calloutBg === 'rgb(255, 255, 255)', '折叠框在纸上变为白底', noi.calloutBg);
+    ck(/KaTeX/i.test(noi.katexFont), '公式仍用 KaTeX 字体', noi.katexFont);
+
+    // The default PDF must be untouched by all of this.
+    ck(std.codeBg !== 'rgb(255, 255, 255)', '默认主题仍是深色样例框（未被改动）', std.codeBg);
+
+    await p.evaluate(() => document.documentElement.classList.remove('print-noi', 'print-light'));
+    await p.emulateMedia({ media: 'screen' });
+    await p.waitForTimeout(200);
+    ck(await p.evaluate(() => !document.documentElement.classList.contains('print-noi')),
+      '主题类已清理');
+    ck(await p.evaluate(() => typeof LuoguEditor.printDocument === 'function'
+      && !!document.querySelector('[onclick*="printDocument(\'noi\')"]')),
+      '导出菜单有 NOI 风格入口');
+  }
+
+
 
   ck(errs.length === 0, '无 JS 报错', errs.slice(0, 2).join(' | '));
   console.log(`\n分页与页眉页脚 ${pass + fail} 项，失败 ${fail}`);

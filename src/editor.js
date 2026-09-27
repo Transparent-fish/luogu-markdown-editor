@@ -147,7 +147,7 @@ const safeStorage = {
       });
 
       window.addEventListener('afterprint', () => {
-        document.documentElement.classList.remove('print-light', 'print-dark');
+        document.documentElement.classList.remove('print-light', 'print-dark', 'print-noi');
         savedStates.forEach(item => {
           if (!item.wasOpen) {
             item.el.removeAttribute('open');
@@ -3775,11 +3775,30 @@ const safeStorage = {
       // for. Previously the print stylesheet hard-forced a light palette with no way
       // to opt out, so the output was identical in both themes.
       const theme = document.documentElement.getAttribute('data-theme') || 'light';
-      const wantDark = mode ? mode === 'dark' : theme === 'dark';
+      const noi = mode === 'noi';
+      const wantDark = noi ? false : (mode ? mode === 'dark' : theme === 'dark');
       const root = document.documentElement;
-      root.classList.remove('print-light', 'print-dark');
+      root.classList.remove('print-light', 'print-dark', 'print-noi');
       root.classList.add(wantDark ? 'print-dark' : 'print-light');
+      if (noi) root.classList.add('print-noi');
       this._printClassApplied = true;
+
+      // NOI statements always carry a running head and a "第 N 页 共 M 页" foot.
+      // Emitted as the generic @page so any `:::Header` / `:::Footer` the author
+      // wrote still wins on its own section — those are named pages and override.
+      let noiStyle = null;
+      if (noi) {
+        const title = (this.docName || '').replace(/\.(md|markdown|txt)$/i, '');
+        noiStyle = document.createElement('style');
+        noiStyle.setAttribute('data-noi-page', '1');
+        noiStyle.textContent =
+          '@page { size: A4 portrait; margin: 22mm 18mm 20mm 18mm;'
+          + (title ? ` @top-center { content: ${this._cssString(title)};`
+            + ' font-size: 9pt; font-family: serif; }' : '')
+          + ' @bottom-center { content: "第 " counter(page) " 页 共 " counter(pages) " 页";'
+          + ' font-size: 9pt; font-family: serif; } }';
+        document.head.appendChild(noiStyle);
+      }
 
       // Temporarily open all details so every browser engine prints them expanded
       const allDetails = document.querySelectorAll('details.luogu-callout');
@@ -3798,6 +3817,7 @@ const safeStorage = {
 
       window.print();
       paging.undo();
+      if (noiStyle && noiStyle.parentNode) noiStyle.parentNode.removeChild(noiStyle);
 
       // Restore states after print dialog closes
       setTimeout(() => {

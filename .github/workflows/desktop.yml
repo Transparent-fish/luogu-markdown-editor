@@ -8,6 +8,9 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    # Temporary while the spike branch is open, so each push proves the three
+    # platforms still build. Remove this line before merging to main.
+    branches: ['feat/desktop-tauri']
 
 jobs:
   build:

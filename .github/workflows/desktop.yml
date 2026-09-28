@@ -1,0 +1,77 @@
+name: Desktop
+
+# Kept separate from CI on purpose. A three-platform Rust build takes tens of
+# minutes and depends on system toolchains; folding it into the main CI would turn
+# a two-minute feedback loop into a slow, flaky one. This runs only when asked, or
+# when a release tag is cut.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: linux
+          - os: windows-latest
+            label: windows
+          - os: macos-latest
+            label: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # The desktop app ships the very same artifact the web build produces, so it
+      # is built here rather than vendored — the two cannot drift apart.
+      - name: Build the single-file editor
+        run: node build-standalone.js
+
+      - name: Stage it as the desktop frontend
+        run: node scripts/stage-desktop-frontend.js
+
+      - name: Install Linux build dependencies
+        if: matrix.label == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install the Tauri CLI
+        working-directory: desktop
+        run: npm install
+
+      - name: Build the application
+        working-directory: desktop
+        run: npx tauri build
+
+      - name: Collect the installers
+        shell: bash
+        run: |
+          mkdir -p out
+          # Copy whatever this platform produced; the set of bundle formats differs
+          # per OS, so match loosely rather than naming exact files.
+          find desktop/src-tauri/target/release/bundle -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' \
+               -o -name '*-setup.exe' -o -name '*.msi' \) \
+            -exec cp {} out/ \; 2>/dev/null || true
+          ls -lh out/ || echo "no bundles found"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.label }}
+          path: out/*
+          if-no-files-found: error

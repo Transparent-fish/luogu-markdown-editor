@@ -25,6 +25,12 @@ python3 app.py              # 本地起服务（仅本机可访问）
 | `src/styles.css` | 全部样式（含打印/PDF 配色） |
 | `build-standalone.js` | 把上述内容内联成单文件 |
 | `test/` | Node 内置测试 |
+| `test-browser/` | Playwright 套件，针对构建产物在真实浏览器里跑 |
+| `desktop/` | Tauri 外壳（Rust）。前端就是构建产物，别在这里改界面 |
+
+桌面包一层外壳时请记住：**界面永远不属于 `desktop/`**。它只提供窗口、文件关联与
+原生文件读写，前端一律来自 `node build-standalone.js` 的产物。要改编辑器行为，
+改 `src/`，三端一起变。
 
 ## 提交要求
 
@@ -33,7 +39,10 @@ python3 app.py              # 本地起服务（仅本机可访问）
    （不得引入任何 CDN 引用）、`index.html` 保持精简。
 3. **注释写"为什么"**。代码本身已说明"做了什么"，注释请解释动机——
    尤其是绕过某个坑的地方，否则后人很容易"顺手改回去"。
-4. 渲染行为以[洛谷官方 Markdown 说明](https://help.luogu.com.cn/rules/academic/handbook/markdown)
+4. **版本号别手改单处**。它写在 `package.json`、`desktop/src-tauri/tauri.conf.json`
+   和 `desktop/src-tauri/Cargo.toml` 三处，用 `node scripts/bump-version.js <版本号>`
+   一次改齐，CI 会校验一致性。
+5. 渲染行为以[洛谷官方 Markdown 说明](https://help.luogu.com.cn/rules/academic/handbook/markdown)
    为准；与 CommonMark 冲突时以洛谷为准，并在注释中说明。
 
 ## 安全相关

@@ -53,13 +53,16 @@ jobs:
           # renders no maths at all, and nothing else in CI would catch it: the
           # standalone build inlines everything, so it stays green either way.
           missing=0
-          for ref in $(grep -oE '(src|href)="(src|assets)/[^"]*"' site/index.html \
-                       | sed -E 's/.*"(.*)"/\1/'); do
+          # `while read` rather than `for x in $(...)`: a path with a space would be
+          # silently split into two refs otherwise, and the check would pass by
+          # accident. Reads from a process substitution so `missing` survives the loop.
+          while IFS= read -r ref; do
             if [ ! -f "site/$ref" ]; then
               echo "::error::index.html references $ref, which is not in the published site."
               missing=1
             fi
-          done
+          done < <(grep -oE '(src|href)="(src|assets)/[^"]*"' site/index.html \
+                   | sed -E 's/.*"(.*)"/\1/')
           [ "$missing" = "0" ] && echo "All local references resolve."
           exit $missing
 

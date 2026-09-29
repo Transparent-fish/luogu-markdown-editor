@@ -53,6 +53,9 @@ jobs:
           name: LuoguMarkdownEditor
           path: LuoguMarkdownEditor.html
 
+      # The desktop installers land on this same Release, courtesy of desktop.yml,
+      # which is triggered by the same tag. That is why the body below describes
+      # files this job never builds: one version number, one download page.
       - name: Attach to the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -61,5 +64,30 @@ jobs:
           body: |
             ## 洛谷 Markdown 编辑器 ${{ github.ref_name }}
 
-            下载下方的 **LuoguMarkdownEditor.html**，双击即可在浏览器中使用。
-            单文件、完全离线，无需安装任何依赖。
+            同一个版本号下，所有运行方式都在这一个页面里：
+
+            | 下载 | 适用 | 说明 |
+            | :--- | :--- | :--- |
+            | `LuoguMarkdownEditor.html` | 任意系统 | 单文件离线版，双击即用，断网可用，无需安装 |
+            | `…-windows-x64-setup.exe` | Windows 10/11 | 桌面版安装包，装完双击 `.md` 直接用本编辑器打开 |
+            | `…-windows-x64-portable.zip` | Windows 10/11 | 免安装绿色版，解压即用，数据存同目录 `data/` |
+            | `…-macos-universal.dmg` | macOS | 通用二进制，Intel 与 Apple 芯片都能跑 |
+            | `…-macos-universal-portable.tar.gz` | macOS | 免安装版（`.app` + 便携标记文件） |
+            | `…-linux-x86_64.AppImage` | Linux | 免安装：`chmod +x` 后直接运行 |
+            | `…-linux-amd64.deb` | Debian / Ubuntu | `sudo apt install ./LuoguMarkdownEditor-*.deb` |
+            | `…-linux-x86_64-portable.tar.gz` | Linux | 免安装版 |
+
+            桌面版与单文件版打包的是**同一份前端产物**（`desktop/dist/index.html` 就是
+            `LuoguMarkdownEditor.html`），所以三端的渲染结果与行为完全一致。
+
+            安装包**未做代码签名**，首次运行系统会拦一下，属正常现象：
+
+            - **Windows**：SmartScreen 提示「已保护你的电脑」→ 更多信息 → 仍要运行。
+            - **macOS**：右键图标选「打开」（或
+              `xattr -dr com.apple.quarantine "/Applications/洛谷 Markdown 编辑器.app"`）。
+
+            桌面版的安装包由 [Desktop 工作流](../../actions/workflows/desktop.yml) 在
+            Windows / macOS / Linux 上分别构建后附加到本 Release，比 HTML 晚几分钟出现。
+
+            - 在线版：<https://wudream813.github.io/luogu-markdown-editor/>
+            - 使用与开发说明：[README](../../blob/main/README.md)

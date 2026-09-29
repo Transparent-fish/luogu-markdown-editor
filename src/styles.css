@@ -43,6 +43,31 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
   --font-mono: "Cascadia Code", "Fira Code", "Consolas", "Courier New", monospace;
   --font-math: "KaTeX_Main", "Times New Roman", serif;
+
+  /* File explorer (desktop panel). Kind colours follow the familiar editor idiom:
+     loud for source you edit, quiet for data you only look at. Declared here rather
+     than in the panel block so the dark theme can retune just the greys. */
+  --ws-folder: #dcb67a;
+  --ws-md: #519aba;
+  --ws-txt: #8a8f98;
+  --ws-js: #e2b93d;
+  --ws-html: #e37933;
+  --ws-css: #42a5f5;
+  --ws-cpp: #9c6ade;
+  --ws-py: #4b8bbe;
+  --ws-java: #cc7832;
+  --ws-rust: #d08770;
+  --ws-go: #4ec9b0;
+  --ws-shell: #89e051;
+  --ws-config: #9aa0a6;
+  --ws-img: #a074c4;
+  --ws-pdf: #e05c5c;
+  --ws-zip: #c9a227;
+  --ws-bin: #7f8c8d;
+  --ws-plain: #9aa0a6;
+  --ws-indent: rgba(110, 110, 110, .30);
+  --ws-selected-bg: rgba(52, 152, 219, .18);
+  --ws-row-h: 22px;
 }
 
 /* Dark Theme */
@@ -71,6 +96,16 @@
   --luogu-orange-light: #3d2b14;
   --luogu-red: #d32f2f;
   --luogu-red-light: #3b1b1b;
+
+  /* Retune the explorer greys for a dark panel; the kind colours are mid-tones
+     that already read well on both backgrounds. */
+  --ws-plain: #8b949e;
+  --ws-txt: #8b949e;
+  --ws-config: #9aa0a6;
+  --ws-indent: rgba(255, 255, 255, .13);
+  --ws-selected-bg: rgba(0, 122, 204, .32);
+  --ws-pdf: #e87979;
+  --ws-zip: #d4b04a;
 }
 
 /* Academic White Theme */
@@ -3129,64 +3164,265 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   html.print-dark, .print-dark body { color-scheme: dark; }
 }
 
-/* ---- Workspace panel (desktop only) -----------------------------------------
+/* ---- Workspace panel & file explorer (desktop only) --------------------------
    Hidden unless a native filesystem is present; `has-workspace` is set by
-   LuoguWorkspace.mount(). */
+   LuoguWorkspace.mount(). The tree aims to read like a sidebar you already know:
+   22px rows, a chevron that rotates, kind-coloured icons, indent guides. */
 .workspace-panel { display: none; }
 .has-workspace .workspace-panel {
   display: flex;
   flex-direction: column;
-  flex: 0 0 210px;
-  min-width: 150px;
+  flex: 0 0 240px;
+  min-width: 180px;
+  max-width: 480px;
   border-right: 1px solid var(--border-color);
   background: var(--bg-secondary);
   overflow: hidden;
   font-size: 12px;
 }
+/* Grab handle: a flex item with negative margins, so it is 5px of pointer target
+   straddling the border while costing zero layout width. */
+.ws-resizer {
+  flex: 0 0 5px;
+  width: 5px;
+  margin: 0 -2.5px;
+  z-index: 6;
+  cursor: col-resize;
+  background: transparent;
+}
+.ws-resizer:hover { background: var(--border-focus); opacity: .5; }
+body.ws-resizing { user-select: none; }
+body.ws-resizing,
+body.ws-resizing * { cursor: col-resize !important; }
+
 .ws-head {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 6px 8px;
+  gap: 1px;
+  padding: 5px 6px;
   border-bottom: 1px solid var(--border-color);
 }
-.ws-title { flex: 1; font-weight: 600; color: var(--text-muted); letter-spacing: .05em; }
-.ws-btn {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-size: 13px;
-  line-height: 1;
-  color: var(--text-primary);
+.ws-title {
+  flex: 1;
+  padding-left: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.ws-btn:hover { background: var(--bg-tertiary); }
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ws-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.ws-btn:active { transform: translateY(1px); }
+
+.ws-filter-row { padding: 6px 6px 2px; }
+.ws-filter {
+  width: 100%;
+  height: 22px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  outline: none;
+}
+.ws-filter:focus { border-color: var(--border-focus); }
+.ws-filter::placeholder { color: var(--text-muted); }
+
 .ws-sec {
   padding: 5px 8px;
   border-top: 1px solid var(--border-color);
   color: var(--text-muted);
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: .04em;
 }
-.ws-tree { flex: 1 1 auto; overflow: auto; padding: 4px 0; }
-.ws-recent { flex: 0 0 auto; max-height: 132px; overflow: auto; padding: 4px 0; }
-.ws-empty { padding: 6px 10px; color: var(--text-muted); }
+.ws-tree {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 4px 4px 8px;
+  outline: none;
+  user-select: none;
+}
+.ws-recent { flex: 0 0 auto; max-height: 132px; overflow: auto; padding: 2px 4px 6px; }
+.ws-empty { padding: 6px 8px; color: var(--text-muted); }
+.ws-empty-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 8px;
+}
+.ws-empty-hint { color: var(--text-muted); }
+.ws-empty-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ws-empty-btn:hover { border-color: var(--border-focus); color: var(--border-focus); }
+.ws-empty-btn-quiet { background: transparent; }
+
+/* --- tree rows --- */
 .ws-node {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
+  gap: 5px;
+  height: var(--ws-row-h);
+  padding: 0 6px;
+  border-radius: 4px;
+  color: var(--text-primary);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-primary);
 }
 .ws-node:hover { background: var(--bg-tertiary); }
-.ws-node.is-open { background: rgba(52, 152, 219, .14); color: var(--luogu-blue); }
-.ws-node.is-dir > .ws-node-name { font-weight: 600; }
-.ws-node-icon { flex: none; width: 10px; color: var(--text-muted); }
+/* Indent guides: one 1px line per ancestor level, painted as the row's background
+   so there is no per-level element to keep in sync with the DOM. */
+.ws-node.has-guides {
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--ws-indent) 0 1px,
+    transparent 1px 14px);
+  background-repeat: no-repeat;
+  background-position: 6px 0;
+  background-size: calc(var(--ws-depth, 1) * 14px) 100%;
+}
+.ws-node.is-root > .ws-node-name { font-weight: 600; }
+.ws-node.is-selected { background: var(--ws-selected-bg); }
+/* The focus ring only while the tree actually has focus — otherwise it lingers as a
+   stray blue box after you click into the editor. */
+#wsTree:focus-within .ws-node.is-focused { box-shadow: inset 0 0 0 1px var(--border-focus); }
+/* The file open in the editor and the selected row are different things and can
+   both be true; the open one gets colour, the selection gets the fill. */
+.ws-node.is-open > .ws-node-name { color: var(--luogu-blue); font-weight: 600; }
+.ws-node.is-dirty > .ws-node-name::after {
+  content: '●';
+  margin-left: 5px;
+  font-size: 9px;
+  color: var(--luogu-orange);
+  vertical-align: 1px;
+}
+.ws-node.is-dragging { opacity: .45; }
+.ws-node.is-drop-target {
+  background: var(--luogu-blue-light);
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+}
 .ws-node-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-input-row { cursor: default; }
+
+.ws-chev {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+.ws-svg-chev { transition: transform .12s ease; }
+.ws-node.is-expanded > .ws-chev .ws-svg-chev { transform: rotate(90deg); }
+.ws-icon { flex: none; display: inline-flex; width: 16px; height: 16px; }
+
+/* --- icons (inline SVG, see luogu-workspace.js for why not a font) --- */
+.ws-svg {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ws-svg-btn { stroke-width: 1.25; }
+.ws-svg-folder { color: var(--ws-folder); }
+.ws-folder-back { opacity: .55; }
+.ws-svg[data-slot="md"] { color: var(--ws-md); }
+.ws-svg[data-slot="txt"] { color: var(--ws-txt); }
+.ws-svg[data-slot="js"] { color: var(--ws-js); }
+.ws-svg[data-slot="html"] { color: var(--ws-html); }
+.ws-svg[data-slot="css"] { color: var(--ws-css); }
+.ws-svg[data-slot="cpp"] { color: var(--ws-cpp); }
+.ws-svg[data-slot="py"] { color: var(--ws-py); }
+.ws-svg[data-slot="java"] { color: var(--ws-java); }
+.ws-svg[data-slot="rust"] { color: var(--ws-rust); }
+.ws-svg[data-slot="go"] { color: var(--ws-go); }
+.ws-svg[data-slot="shell"] { color: var(--ws-shell); }
+.ws-svg[data-slot="config"] { color: var(--ws-config); }
+.ws-svg[data-slot="img"] { color: var(--ws-img); }
+.ws-svg[data-slot="pdf"] { color: var(--ws-pdf); }
+.ws-svg[data-slot="zip"] { color: var(--ws-zip); }
+.ws-svg[data-slot="bin"] { color: var(--ws-bin); }
+.ws-svg[data-slot="plain"] { color: var(--ws-plain); }
+
+/* --- inline rename / new-entry input --- */
+.ws-inline-input {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  padding: 0 5px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-focus);
+  border-radius: 3px;
+  outline: none;
+}
+
+/* --- context menu --- */
+.ws-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+  font-size: 12px;
+}
+.ws-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+}
+.ws-menu-item > span:first-child { flex: 1; }
+.ws-menu-item:hover,
+.ws-menu-item:focus { background: var(--bg-tertiary); }
+.ws-menu-hint { color: var(--text-muted); font-size: 11px; }
+.ws-menu-item.is-danger { color: var(--luogu-red); }
+.ws-menu-item.is-danger:hover,
+.ws-menu-item.is-danger:focus { background: var(--luogu-red-light); }
+.ws-menu-sep { height: 1px; margin: 4px 6px; background: var(--border-color); }
 
 /* Document tabs, above the editor. */
 .ws-tabs { display: none; }
@@ -3217,6 +3453,7 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   box-shadow: inset 0 2px 0 var(--luogu-blue);
 }
 .ws-tab.is-dirty .ws-tab-name { font-style: italic; }
+.ws-tab.is-dirty .ws-tab-close { color: var(--luogu-orange); }
 .ws-tab-name { overflow: hidden; text-overflow: ellipsis; }
 .ws-tab-close {
   border: none;
@@ -3229,4 +3466,4 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   border-radius: 3px;
 }
 .ws-tab-close:hover { background: var(--luogu-red, #e74c3c); color: #fff; }
-@media print { .workspace-panel, .ws-tabs { display: none !important; } }
+@media print { .workspace-panel, .ws-tabs, .ws-menu { display: none !important; } }

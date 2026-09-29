@@ -27,10 +27,26 @@ python3 app.py              # 本地起服务（仅本机可访问）
 | `test/` | Node 内置测试 |
 | `test-browser/` | Playwright 套件，针对构建产物在真实浏览器里跑 |
 | `desktop/` | Tauri 外壳（Rust）。前端就是构建产物，别在这里改界面 |
+| `src/luogu-workspace.js` | 桌面版的工作区：标签页 + 资源管理器（文件树） |
+| `test/desktop-config.test.js` | 守住桌面版配置前提（`withGlobalTauri`、权限、拖放开关） |
 
 桌面包一层外壳时请记住：**界面永远不属于 `desktop/`**。它只提供窗口、文件关联与
 原生文件读写，前端一律来自 `node build-standalone.js` 的产物。要改编辑器行为，
 改 `src/`，三端一起变。
+
+### 桌面版的三个静默失效点
+
+这三处配错都不会报错，只会让功能悄悄消失，所以都有测试守着
+（`test/desktop-config.test.js`，在 `node --test test/` 里跑，不需要 Rust 工具链）：
+
+| 配置 | 配错的后果 |
+| :--- | :--- |
+| `app.withGlobalTauri` | 必须为 `true`。前端靠 `window.__TAURI__` 判断有没有原生文件系统；Tauri v2 默认**不注入**，于是 `detectHost()` 永远是 null，整个工作区面板（含文件树）都不出现 |
+| `windows[0].dragDropEnabled` | 必须为 `false`。Tauri 默认接管 webview 的拖放，Windows 上页面内 HTML5 拖拽随之失效，文件树的拖拽移动就没反应 |
+| `capabilities` 里的 `fs:allow-*` | 少一条，对应操作在点击时才失败。`fs:allow-rename` 是新旧文件树交互都依赖的一条 |
+
+另外，打开文件夹时必须传 `recursive: true`：对话框只把**它返回的那个路径**加进文件系统
+作用域，不带这个参数，子目录只能读不能写——树里看得见，一改名就报错。
 
 ## 提交要求
 

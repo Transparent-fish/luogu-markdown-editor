@@ -73,6 +73,33 @@ jobs:
             -exec cp {} out/ \; 2>/dev/null || true
           ls -lh out/ || echo "no bundles found"
 
+      # Portable build: the bare executable plus the marker file that makes it keep
+      # its data (drafts, recent files) in its own folder instead of the user
+      # profile. That is the whole point of a green/portable copy — it has to
+      # survive being carried to another machine on a stick.
+      - name: Assemble the portable package
+        shell: bash
+        run: |
+          mkdir -p portable
+          case "${{ matrix.label }}" in
+            windows) cp "desktop/src-tauri/target/release/luogu-markdown-editor.exe" portable/ ;;
+            linux)   cp "desktop/src-tauri/target/release/luogu-markdown-editor" portable/ ;;
+            macos)   cp -R desktop/src-tauri/target/release/bundle/macos/*.app portable/ 2>/dev/null || \
+                     cp "desktop/src-tauri/target/release/luogu-markdown-editor" portable/ ;;
+          esac
+          printf '%s\n' \
+            '这个文件让编辑器以便携模式运行：' \
+            '草稿、最近打开记录等数据会写入同目录的 data/ 文件夹，' \
+            '而不是系统用户目录。删除本文件即恢复为普通模式。' \
+            > portable/portable.txt
+          ls -lh portable/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-${{ matrix.label }}
+          path: portable/*
+          if-no-files-found: error
+
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.label }}

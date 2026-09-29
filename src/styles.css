@@ -3128,3 +3128,105 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
 @media print {
   html.print-dark, .print-dark body { color-scheme: dark; }
 }
+
+/* ---- Workspace panel (desktop only) -----------------------------------------
+   Hidden unless a native filesystem is present; `has-workspace` is set by
+   LuoguWorkspace.mount(). */
+.workspace-panel { display: none; }
+.has-workspace .workspace-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 210px;
+  min-width: 150px;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  overflow: hidden;
+  font-size: 12px;
+}
+.ws-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+.ws-title { flex: 1; font-weight: 600; color: var(--text-muted); letter-spacing: .05em; }
+.ws-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+.ws-btn:hover { background: var(--bg-tertiary); }
+.ws-sec {
+  padding: 5px 8px;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.ws-tree { flex: 1 1 auto; overflow: auto; padding: 4px 0; }
+.ws-recent { flex: 0 0 auto; max-height: 132px; overflow: auto; padding: 4px 0; }
+.ws-empty { padding: 6px 10px; color: var(--text-muted); }
+.ws-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+.ws-node:hover { background: var(--bg-tertiary); }
+.ws-node.is-open { background: rgba(52, 152, 219, .14); color: var(--luogu-blue); }
+.ws-node.is-dir > .ws-node-name { font-weight: 600; }
+.ws-node-icon { flex: none; width: 10px; color: var(--text-muted); }
+.ws-node-name { overflow: hidden; text-overflow: ellipsis; }
+
+/* Document tabs, above the editor. */
+.ws-tabs { display: none; }
+.has-workspace .ws-tabs {
+  display: flex;
+  flex: none;
+  gap: 1px;
+  overflow-x: auto;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+.ws-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  border-right: 1px solid var(--border-color);
+  color: var(--text-muted);
+  white-space: nowrap;
+  max-width: 200px;
+}
+.ws-tab:hover { background: var(--bg-tertiary); }
+.ws-tab.is-active {
+  background: var(--bg-editor);
+  color: var(--text-primary);
+  box-shadow: inset 0 2px 0 var(--luogu-blue);
+}
+.ws-tab.is-dirty .ws-tab-name { font-style: italic; }
+.ws-tab-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-tab-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+}
+.ws-tab-close:hover { background: var(--luogu-red, #e74c3c); color: #fff; }
+@media print { .workspace-panel, .ws-tabs { display: none !important; } }

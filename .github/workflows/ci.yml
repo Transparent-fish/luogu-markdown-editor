@@ -153,6 +153,12 @@ jobs:
       - name: Pagination suite
         run: node test-browser/pagination.test.js
 
+      # The workspace panel is desktop-only but ships in the same HTML, so this
+      # guards both that it stays invisible in a browser and that it works when a
+      # native filesystem is present (stubbed here — no Rust toolchain needed).
+      - name: Workspace panel suite
+        run: node test-browser/workspace-panel.test.js
+
   python:
     runs-on: ubuntu-latest
     steps:

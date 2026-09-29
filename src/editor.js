@@ -107,6 +107,15 @@ const safeStorage = {
       this.toggleScrollSync(this.scrollSyncEnabled);
       this.applyLintDisplay();
 
+      // Tabs + folder tree, desktop only. mount() returns false in a browser, so
+      // the web build is untouched.
+      if (typeof LuoguWorkspace !== 'undefined') {
+        try {
+          const ws = new LuoguWorkspace(this);
+          if (ws.mount()) this.workspace = ws;
+        } catch (e) { /* never let the panel break startup */ }
+      }
+
       if (savedContent && savedContent.trim().length > 0) {
         this.resetCalloutToggles();
         this.setContent(savedContent, false);
@@ -2499,6 +2508,10 @@ const safeStorage = {
      * (which yields no writable handle) on browsers that lack it.
      */
     async saveMarkdownFile() {
+      // With the workspace open, saving belongs to the active tab: it knows which
+      // file this document came from, which the single-document path does not.
+      if (this.workspace) return this.workspace.saveActive();
+
       const content = this.getContent();
       const fileName = this.docName.endsWith('.md') || this.docName.endsWith('.markdown')
         || this.docName.endsWith('.txt')

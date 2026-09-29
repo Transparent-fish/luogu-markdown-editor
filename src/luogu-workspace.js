@@ -80,6 +80,44 @@
   /** Characters no filesystem in play will accept. */
   const BAD_NAME = /[\\/:*?"<>|]/;
 
+  const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdown', 'mkd', 'mdx']);
+
+  /**
+   * 已知的二进制类型。命中就"先问一句再打开"——`readTextFile` 读二进制只会得到
+   * 一堆替换字符，而保存是把编辑框里的内容原样写回去，等于用乱码覆盖原文件。
+   * 列成白名单式的黑名单而非反过来的白名单：真正需要拦的是这一类，而 Makefile、
+   * LICENSE、.gitattributes 这类"没扩展名但其实是文本"的文件不该被烦。
+   */
+  const BINARY_EXTS = new Set([
+    // 图片
+    'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'tif', 'tiff', 'avif', 'heic', 'psd',
+    // 音频 / 视频
+    'mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac', 'opus', 'wma', 'mid',
+    'mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', 'wmv', 'm4v',
+    // 压缩包 / 镜像
+    'zip', 'gz', 'tgz', 'tar', 'bz2', 'xz', 'zst', '7z', 'rar', 'jar', 'war',
+    'deb', 'rpm', 'dmg', 'iso', 'img', 'apk',
+    // 可执行文件 / 目标文件 / 库
+    'exe', 'dll', 'so', 'dylib', 'bin', 'o', 'obj', 'a', 'lib', 'class', 'wasm',
+    'msi', 'app', 'appimage', 'pyc', 'pyo', 'rlib', 'rmeta', 'pdb',
+    // 文档 / 表格 / 演示（都是压缩包，不是纯文本）
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp',
+    // 字体 / 数据库
+    'ttf', 'otf', 'woff', 'woff2', 'eot',
+    'db', 'sqlite', 'sqlite3', 'mdb', 'dat', 'pak',
+  ]);
+
+  /**
+   * 'markdown' | 'text' | 'binary'。
+   * 无扩展名的按文本处理：二进制文件几乎没有不带扩展名的。
+   */
+  function classifyFile(name) {
+    const ext = extensionOf(name);
+    if (MARKDOWN_EXTS.has(ext)) return 'markdown';
+    if (BINARY_EXTS.has(ext)) return 'binary';
+    return 'text';
+  }
+
   // ---- icons --------------------------------------------------------------
   // Inline SVG, deliberately: the build is checked for external references, so an
   // icon font or a sprite file is not an option. Stroke-based so one geometry reads
@@ -203,7 +241,9 @@
       // itself — subdirectories would be readable in the tree but not writable.
       openFolder: () => dialog.open({ directory: true, multiple: false, recursive: true }),
       saveAs: (opts) => dialog.save(opts),
-      confirm: (msg) => (dialog.confirm ? dialog.confirm(msg) : Promise.resolve(global.confirm(msg))),
+      confirm: (msg, opts) => (dialog.confirm
+        ? dialog.confirm(msg, opts)
+        : Promise.resolve(global.confirm(msg))),
       revealInDir: opener && opener.revealItemInDir
         ? (p) => opener.revealItemInDir(p)
         : null,
@@ -280,9 +320,24 @@
       return this.docs.findIndex((d) => d.path && path && d.path === path);
     }
 
-    async openPath(path) {
+    async openPath(path, opts) {
       const existing = this.indexOfPath(path);
       if (existing >= 0) { this.activate(existing); return; }
+
+      const name = baseName(path);
+      const kind = classifyFile(name);
+      if (kind === 'binary' && !(opts && opts.force)) {
+        const ok = await this.fs.confirm(
+          `「${name}」看起来不是文本文件。\n\n`
+            + '按文本打开只会看到乱码，而且一旦保存，这些乱码会覆盖原文件。\n\n仍要打开吗？',
+          { kind: 'warning', title: '不是文本文件', okLabel: '仍要打开', cancelLabel: '取消' },
+        );
+        if (!ok) return;
+        this._toast(`已按文本打开「${name}」，请不要保存：写回会损坏原文件`, 'error');
+      } else if (kind === 'text') {
+        this._hintNotMarkdown(name);
+      }
+
       let content = '';
       try {
         content = await this.fs.readTextFile(path);
@@ -293,6 +348,18 @@
       this.docs.push({ path, name: baseName(path), content, dirty: false });
       this.activate(this.docs.length - 1);
       this._pushRecent(path);
+    }
+
+    /**
+     * 提醒"这不是 Markdown 文档"。每种扩展名只提示一次——每开一个 .cpp 都弹同一句话，
+     * 提示就从帮助变成了噪音。
+     */
+    _hintNotMarkdown(name) {
+      this._hintedExts = this._hintedExts || new Set();
+      const ext = extensionOf(name) || '(无扩展名)';
+      if (this._hintedExts.has(ext)) return;
+      this._hintedExts.add(ext);
+      this._toast(`「${name}」不是 Markdown 文档：预览会按 Markdown 规则渲染，保存时原样写回`, 'info');
     }
 
     activate(i) {
@@ -326,9 +393,14 @@
       }
       this.docs.splice(i, 1);
       if (!this.docs.length) {
-        this.docs.push({ path: null, name: '未命名.md', content: '', dirty: false });
-        this.active = 0;
-      } else if (this.active >= this.docs.length) {
+        // 允许一个标签都不留。以前这里会补一个空白页，于是"关掉所有文件"这件事
+        // 做不到，人也没法真的收拾干净。
+        this.active = -1;
+        this._clearEditor();
+        this.render();
+        return;
+      }
+      if (this.active >= this.docs.length) {
         this.active = this.docs.length - 1;
       } else if (i < this.active) {
         this.active -= 1;
@@ -341,9 +413,36 @@
       this.activate(this.docs.length - 1);
     }
 
+    /** 没有标签页时把编辑区清空。 */
+    _clearEditor() {
+      this.editor.docName = '未命名.md';
+      const nameInput = document.getElementById('docNameInput');
+      if (nameInput) nameInput.value = '';
+      this.editor.resetCalloutToggles && this.editor.resetCalloutToggles();
+      this.editor.setContent('', false);
+    }
+
+    /**
+     * 编辑区的空状态：一个标签页都没有时显示引导，并把输入区置为只读。
+     *
+     * 只读是刻意的：没有标签页时敲进去的字没有任何地方可存（保存是无处可写的），
+     * 与其让它静默消失，不如先请人新建一个文档。
+     */
+    _applyEmptyState() {
+      if (!this.enabled) return;
+      const empty = this.docs.length === 0;
+      document.documentElement.classList.toggle('ws-no-docs', empty);
+      const ta = document.getElementById('editorTextarea');
+      if (ta) ta.readOnly = empty;
+      const nameInput = document.getElementById('docNameInput');
+      if (nameInput) nameInput.readOnly = empty;
+      const mark = document.getElementById('wsWatermark');
+      if (mark) mark.hidden = !empty;
+    }
+
     async saveActive() {
       const d = this.docs[this.active];
-      if (!d) return false;
+      if (!d) { this._toast('当前没有打开的文件', 'info'); return false; }
       d.content = this.editor.getContent();
       let path = d.path;
       if (!path) {
@@ -1128,14 +1227,18 @@
         .reverse();
       if (doomed.length) {
         doomed.forEach((i) => this.docs.splice(i, 1));
-        if (!this.docs.length) this.docs.push({ path: null, name: '未命名.md', content: '', dirty: false });
-        this.active = Math.max(0, Math.min(this.active, this.docs.length - 1));
-        const d = this.docs[this.active];
-        this.editor.docName = d.name;
-        const nameInput = document.getElementById('docNameInput');
-        if (nameInput) nameInput.value = d.name;
-        this.editor.resetCalloutToggles && this.editor.resetCalloutToggles();
-        this.editor.setContent(d.content, false);
+        if (!this.docs.length) {
+          this.active = -1;
+          this._clearEditor();
+        } else {
+          this.active = Math.max(0, Math.min(this.active, this.docs.length - 1));
+          const d = this.docs[this.active];
+          this.editor.docName = d.name;
+          const nameInput = document.getElementById('docNameInput');
+          if (nameInput) nameInput.value = d.name;
+          this.editor.resetCalloutToggles && this.editor.resetCalloutToggles();
+          this.editor.setContent(d.content, false);
+        }
       }
       Object.keys(this.treeState).forEach((k) => { if (isInside(k, path)) delete this.treeState[k]; });
       [...this.selection].forEach((p) => { if (isInside(p, path)) this.selection.delete(p); });
@@ -1361,6 +1464,30 @@
       tabs.className = 'ws-tabs';
       pane.insertBefore(tabs, pane.firstChild);
 
+      // 空状态浮层。挂在 .editor-wrapper 上（它是 position: relative），这样只盖住
+      // 编辑区正文，不挡上面的文件名与查找栏。内容是写死的字面量，没有插值。
+      const wrapper = pane.querySelector('.editor-wrapper');
+      if (wrapper) {
+        const mark = document.createElement('div');
+        mark.id = 'wsWatermark';
+        mark.className = 'ws-watermark';
+        mark.hidden = true;
+        mark.innerHTML = `
+          <div class="ws-watermark-icon"></div>
+          <div class="ws-watermark-title">没有打开的文件</div>
+          <div class="ws-watermark-actions">
+            <button type="button" class="ws-watermark-btn" id="wsWmNew">新建文件</button>
+            <button type="button" class="ws-watermark-btn" id="wsWmOpenFile">打开文件…</button>
+            <button type="button" class="ws-watermark-btn" id="wsWmOpenDir">打开文件夹…</button>
+          </div>
+          <div class="ws-watermark-hint">在左侧文件树里单击文件即可打开，<kbd>Ctrl</kbd>+<kbd>S</kbd> 写回原文件</div>`;
+        mark.querySelector('.ws-watermark-icon').appendChild(makeIcon('doc', null, 'ws-svg-watermark'));
+        mark.querySelector('#wsWmNew').onclick = () => this.newTab();
+        mark.querySelector('#wsWmOpenFile').onclick = () => this.openFileDialog();
+        mark.querySelector('#wsWmOpenDir').onclick = () => this.openFolderDialog();
+        wrapper.appendChild(mark);
+      }
+
       // Toolbar icons: same SVG factory as the tree, so the panel has one visual voice.
       document.getElementById('wsNewFile').appendChild(makeIcon('newFile', null, 'ws-svg-btn'));
       document.getElementById('wsNewDir').appendChild(makeIcon('newDir', null, 'ws-svg-btn'));
@@ -1512,6 +1639,8 @@
     async render() {
       this.renderTabs();
       this.renderRecent();
+      // 同步做、不等 renderTree：关掉最后一个标签页时，编辑区应当立刻反应。
+      this._applyEmptyState();
       await this.renderTree();
     }
 

@@ -214,16 +214,31 @@ const FAKE_FS = `{
   ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length) === before - 1,
     '确认后关闭标签页');
 
-  // Never end up with zero tabs.
+  // Closing the last tab is allowed. The editor goes to its empty state instead of
+  // silently spawning a blank document; the textarea turns read-only because with no
+  // tab there is nowhere for typed text to go.
   await p.evaluate(async () => {
     window.__CONFIRM = true;
     const ws = LuoguEditor.workspace;
-    while (ws.docs.length > 1) await ws.closeTab(0);
-    await ws.closeTab(0);
+    while (ws.docs.length) await ws.closeTab(0);
   });
   await p.waitForTimeout(500);
+  ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length === 0),
+    '可以关掉所有标签页（不自动补空白页）');
+  ck(await p.evaluate(() => !document.getElementById('wsWatermark').hidden),
+    '没有标签页时显示空状态引导');
+  ck(await p.evaluate(() => document.getElementById('editorTextarea').readOnly === true),
+    '没有标签页时编辑区只读（打了字无处可存）');
+  ck(await p.evaluate(() => document.documentElement.classList.contains('ws-no-docs')),
+    '空状态类名已挂上');
+
+  await p.evaluate(() => LuoguEditor.workspace.newTab());
+  await p.waitForTimeout(400);
   ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length === 1),
-    '关掉最后一个标签页会自动新建空白页');
+    '空状态下新建标签页即可恢复');
+  ck(await p.evaluate(() => document.getElementById('editorTextarea').readOnly === false
+    && document.getElementById('wsWatermark').hidden),
+    '恢复标签页后编辑区可写、引导消失');
 
   // Concurrent renders must not duplicate the tree. renderTree() awaits a readDir
   // per level; two overlapping calls each cleared the host and then both appended,

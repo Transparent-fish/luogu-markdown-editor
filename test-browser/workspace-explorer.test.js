@@ -121,7 +121,10 @@ const FAKE_FS = `
     dialog: {
       open: async (o) => (o && o.directory ? window.__PICK_DIR : window.__PICK_FILE),
       save: async () => window.__PICK_SAVE,
-      confirm: async (m) => { log.push('confirm:' + m); return window.__CONFIRM !== false; }
+      confirm: async (m, o) => {
+        log.push('confirm:' + m + (o ? '|opts:' + JSON.stringify(o) : ''));
+        return window.__CONFIRM !== false;
+      }
     },
     opener: {
       revealItemInDir: async (p) => { log.push('reveal:' + p); }
@@ -514,6 +517,100 @@ const FAKE_FS = `
   ck(await tabCount() === tabsBeforeDelete - 1, '被删除文件的标签页自动关闭');
   ck(await p.evaluate(() => !LuoguEditor.workspace.docs.some((d) => d.path === '/proj/README.md')),
     '文档模型里不再留着已删除的路径');
+
+  // ---- 7.5 关到零个标签：空状态 ---------------------------------------------
+  await p.evaluate(() => { window.__CONFIRM = true; });
+  const tabsAtStart = await tabCount();
+  await p.evaluate(async () => {
+    const ws = LuoguEditor.workspace;
+    while (ws.docs.length) await ws.closeTab(0);
+  });
+  await p.waitForTimeout(500);
+  ck(await tabCount() === 0, `可以一个标签都不留（起始 ${tabsAtStart} 个，全部关掉）`);
+  ck(await p.evaluate(() => !document.getElementById('wsWatermark').hidden), '空状态引导出现');
+  ck(await p.evaluate(() => document.getElementById('editorTextarea').readOnly === true),
+    '空状态下编辑区只读');
+  ck(await p.evaluate(() => document.getElementById('editorTextarea').value === ''),
+    '空状态下编辑区内容是空的');
+  ck(await p.evaluate(() => document.getElementById('docNameInput').value === ''),
+    '空状态下文件名栏也清空');
+  ck(await p.evaluate(() => !document.querySelector('.ws-tab.is-active')),
+    '没有标签页时不存在 active 标签页');
+  // 空状态下按 Ctrl+S：不该抛错，也不该走回"下载一份副本"的老路径
+  await p.evaluate(() => {
+    const ta = document.getElementById('editorTextarea');
+    ta.focus();
+  });
+  await p.keyboard.press('Control+s');
+  await p.waitForTimeout(400);
+  ck((await toasts()).includes('没有打开的文件'), '空状态下 Ctrl+S 提示没有打开的文件');
+  ck(errs.length === 0, '空状态下无 JS 报错', errs.slice(0, 3).join(' | '));
+
+  // 引导里的按钮能把人带回来
+  await p.click('#wsWmNew');
+  await p.waitForTimeout(400);
+  ck(await tabCount() === 1, '空状态引导里的"新建文件"可用');
+  ck(await p.evaluate(() => document.getElementById('editorTextarea').readOnly === false),
+    '新建后编辑区恢复可写');
+  ck(await p.evaluate(() => document.getElementById('wsWatermark').hidden), '新建后引导消失');
+
+  // ---- 7.6 非 Markdown 文件的提示 -------------------------------------------
+  // 打开 .md 应当安安静静
+  await p.evaluate(() => { document.getElementById('toastContainer').textContent = ''; });
+  await p.evaluate(() => LuoguEditor.workspace.openPath('/proj/src/../README.md')
+    .catch(() => LuoguEditor.workspace.openPath('/proj/README.md')));
+  await p.waitForTimeout(500);
+  await p.evaluate(() => LuoguEditor.workspace.openPath('/proj/README.md'));
+  await p.waitForTimeout(500);
+  ck(!(await toasts()).includes('不是 Markdown 文档'), '打开 .md 不打扰');
+
+  // 打开 .txt：提示"不是 Markdown"，且只提示一次
+  await p.evaluate(() => { document.getElementById('toastContainer').textContent = ''; });
+  await p.evaluate(() => LuoguEditor.workspace.openPath('/proj/src/notes.txt'));
+  await p.waitForTimeout(500);
+  ck((await toasts()).includes('不是 Markdown 文档'), '.txt 会提示不是 Markdown 文档');
+
+  await p.evaluate(() => { document.getElementById('toastContainer').textContent = ''; });
+  await p.evaluate(() => {
+    const ws = LuoguEditor.workspace;
+    const i = ws.indexOfPath('/proj/src/notes.txt');
+    if (i >= 0) ws.docs.splice(i, 1);   // 先关掉，才能重新"打开"
+    return ws.openPath('/proj/src/notes.txt');
+  });
+  await p.waitForTimeout(500);
+  ck(!(await toasts()).includes('不是 Markdown 文档'), '同一扩展名不再重复提示（避免噪音）');
+
+  // 打开 .cpp：同样是文本，给提示。
+  // 先清掉"已提示过的扩展名"——前面已经打开过 main.cpp，不清的话这次不会再提示，
+  // 断言就变成了在测执行顺序而不是在测行为。
+  await p.evaluate(() => {
+    LuoguEditor.workspace._hintedExts.clear();
+    document.getElementById('toastContainer').textContent = '';
+  });
+  await p.evaluate(() => LuoguEditor.workspace.openPath('/proj/src/main.cpp'));
+  await p.waitForTimeout(500);
+  ck((await toasts()).includes('不是 Markdown 文档'), '.cpp 也会提示（每种扩展名各一次）');
+
+  // 打开 .png：先确认，取消则什么都不发生
+  await p.evaluate(() => { window.__CONFIRM = false; });
+  const tabsBeforePng = await tabCount();
+  const readsBeforePng = await p.evaluate(() => window.__FAKE.log.filter((l) => l === 'read:/proj/assets/logo.png').length);
+  await p.evaluate(() => LuoguEditor.workspace.openPath('/proj/assets/logo.png'));
+  await p.waitForTimeout(500);
+  ck(await p.evaluate(() => window.__FAKE.log.some((l) => l.indexOf('confirm:') === 0 && l.includes('不是文本文件'))),
+    '打开图片前先确认');
+  ck(await p.evaluate(() => window.__FAKE.log.some((l) => l.includes('|opts:') && l.includes('warning'))),
+    '确认框按警示样式弹出（标题/按钮文字已传入）');
+  ck(await tabCount() === tabsBeforePng, '取消后不打开任何标签页');
+  ck(await p.evaluate((n) => window.__FAKE.log.filter((l) => l === 'read:/proj/assets/logo.png').length === n, readsBeforePng),
+    '取消后连读都没读——不去碰那个文件');
+
+  // 确认后打开，并给出"别保存"的警告
+  await p.evaluate(() => { window.__CONFIRM = true; document.getElementById('toastContainer').textContent = ''; });
+  await p.evaluate(() => LuoguEditor.workspace.openPath('/proj/assets/logo.png'));
+  await p.waitForTimeout(600);
+  ck(await tabCount() === tabsBeforePng + 1, '确认后打开图片');
+  ck((await toasts()).includes('请不要保存'), '打开二进制后警告不要保存');
 
   // ---- 8. 菜单里的两项杂务 --------------------------------------------------
   await p.click(rowSel('/proj/src'), { button: 'right' });

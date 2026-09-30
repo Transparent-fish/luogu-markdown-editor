@@ -56,12 +56,27 @@
     ));
   }
 
-  /** Translate. Falls back to the key itself, so nothing ever renders as a key. */
+  /**
+   * Translate. Falls back to the key itself, so nothing ever renders as a key.
+   *
+   * Keys that contain real newlines (the preset templates, the long help-manual blocks)
+   * arrive with CRLF on Windows, because Git checks those files out that way — while the
+   * dictionary was generated from a LF checkout. Normalising on a miss keeps Windows from
+   * silently falling back to Chinese everywhere such a key is used. Browser-parsed HTML
+   * is already normalised for us, but JS string literals in the source are not.
+   */
   function t(key, vars) {
     if (key === null || key === undefined) return '';
     const table = TABLES[resolved];
-    const mapped = table && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : key;
-    return interpolate(mapped, vars);
+    let mapped = null;
+    if (table) {
+      if (Object.prototype.hasOwnProperty.call(table, key)) mapped = table[key];
+      else if (key.indexOf('\r') >= 0) {
+        const normalised = key.replace(/\r\n?/g, '\n');
+        if (Object.prototype.hasOwnProperty.call(table, normalised)) mapped = table[normalised];
+      }
+    }
+    return interpolate(mapped === null ? key : mapped, vars);
   }
 
   /**

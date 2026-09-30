@@ -83,6 +83,14 @@ const path = require('path');
   ck(!CJK.test(lintTitle || ''), '排版报告标题已英文', lintTitle);
   await p.evaluate(() => LuoguEditor.closeModal('linterModal'));
 
+  // ---- 预设模板：整篇是含真实换行的长字符串，Windows 的 CRLF 签出曾经让它查不到表 ----
+  const demo = await p.evaluate(() => window.LuoguTemplates.demo);
+  const demoCJK = (demo.match(/[\u4e00-\u9fff]/g) || []).length;
+  ck(demoCJK === 0, `英文模式下"全特性演示"模板正文是英文（残留 ${demoCJK} 字）`, demo.slice(0, 60));
+  ck(/full tour of Luogu Markdown/.test(demo), '模板确实取到了英文版本');
+  const cspj = await p.evaluate(() => window.LuoguTemplates.cspj2025);
+  ck(!/[\u4e00-\u9fff]/.test(cspj), '英文模式下 CSP-J 试题册模板正文也是英文');
+
   // ---- 状态栏 / 标签页这类渲染期文案 ----
   const status = await p.evaluate(() => document.getElementById('docStatsText').textContent);
   ck(!CJK.test(status), '状态栏字数统计已英文', status);

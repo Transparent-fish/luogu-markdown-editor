@@ -60,7 +60,9 @@ function extractKeys() {
     for (const [re, escape] of patterns) {
       for (const m of src.matchAll(re)) {
         const raw = escape ? unescapeJs(m[1]) : m[1];
-        const key = raw.replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+        // Windows 的 Git 会把文件签出成 CRLF，而词典是按 LF 生成的：这里先归一化，
+        // 运行时那边由 i18n.t() 负责同一件事（见 src/i18n.js）。
+        const key = raw.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/\r\n?/g, '\n');
         record(key, rel);
       }
     }
@@ -121,6 +123,14 @@ test('插值占位符在译文里一个都不能少', () => {
     broken.map(([k, want, got]) => `${k} [${want}] → [${got}]`),
     [],
   );
+});
+
+test('带 CRLF 的键也能查到（Windows 签出）', () => {
+  const multi = Object.keys(EN).find((k) => k.includes('\n'));
+  assert.ok(multi, '词典里应该有含换行的键');
+  assert.strictEqual(i18n.t(multi.replace(/\n/g, '\r\n')), EN[multi]);
+  // 换行归一化不该把原本就查不到的键变成乱查
+  assert.strictEqual(i18n.t('这条还没翻译\r\n第二行'), '这条还没翻译\r\n第二行');
 });
 
 test('没收录的键回退成中文原文，而不是键名或空串', () => {

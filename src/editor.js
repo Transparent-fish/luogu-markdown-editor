@@ -106,15 +106,8 @@ const safeStorage = {
       // Reflect the stored scroll-sync preference on the toolbar button.
       this.toggleScrollSync(this.scrollSyncEnabled);
       this.applyLintDisplay();
-
-      // Tabs + folder tree, desktop only. mount() returns false in a browser, so
-      // the web build is untouched.
-      if (typeof LuoguWorkspace !== 'undefined') {
-        try {
-          const ws = new LuoguWorkspace(this);
-          if (ws.mount()) this.workspace = ws;
-        } catch (e) { /* never let the panel break startup */ }
-      }
+      // 上一次用的视图模式（双栏 / 纯编辑 / 纯预览 / Typora）也一并恢复。
+      this.setViewMode(safeStorage.getItem('luogu_editor_view_mode') || 'split', true);
 
       if (savedContent && savedContent.trim().length > 0) {
         this.resetCalloutToggles();
@@ -124,7 +117,21 @@ const safeStorage = {
         this.setContent(LuoguTemplates.demo, false);
       } else {
         this.resetCalloutToggles();
-        this.setContent('# 洛谷 Markdown 编辑器\n\n在此输入内容……', false);
+        this.setContent('# 未命名标题\n\n在此开始编写洛谷 Markdown 内容……\n', false);
+      }
+
+      // Tabs + folder tree, desktop only. mount() returns false in a browser, so the
+      // web build is untouched. It has to come *after* the content above: the first
+      // tab adopts whatever the editor is showing at this moment, and mounting earlier
+      // left the panel holding an empty document while the editor showed the draft.
+      if (typeof LuoguWorkspace !== 'undefined') {
+        try {
+          const ws = new LuoguWorkspace(this);
+          if (ws.mount()) {
+            this.workspace = ws;
+            ws._syncSettingsMenu();
+          }
+        } catch (e) { /* never let the panel break startup */ }
       }
 
       this.bindEvents();
@@ -1810,7 +1817,7 @@ const safeStorage = {
     }
 
     // View Mode Switcher
-    setViewMode(mode) {
+    setViewMode(mode, restore) {
       // Leaving Typora mode must flush any block still open for editing, otherwise
       // the in-progress text is discarded when the pane is hidden.
       if (this.currentMode === 'typora' && mode !== 'typora' && this.typora) {
@@ -1818,6 +1825,8 @@ const safeStorage = {
       }
 
       this.currentMode = mode;
+      // 记下这次选择：下次打开还在这个模式。恢复时不重复写盘，也没必要弹提示。
+      if (!restore) safeStorage.setItem('luogu_editor_view_mode', mode);
       const workspace = document.getElementById('mainWorkspace');
       if (!workspace) return;
 
@@ -1979,6 +1988,9 @@ const safeStorage = {
 
     insertTemplate(key) {
       if (typeof LuoguTemplates !== 'undefined' && LuoguTemplates[key]) {
+        // 一个标签页都没有时模板该落在哪？先开一个，否则内容会挂在"没有打开的文件"
+        // 状态下面，连保存都无处可去。
+        if (this.workspace && !this.workspace.docs.length) this.workspace.newTab();
         if (confirm('应用模板将覆盖当前编辑区内容，是否继续？')) {
           this.resetCalloutToggles();
           this.setContent(LuoguTemplates[key]);
@@ -2438,6 +2450,10 @@ const safeStorage = {
 
     // File Operations
     newDocument() {
+      // 桌面版：新建就是开一个标签页。不需要确认——开标签页不会覆盖东西，弹一句
+      // "确定要新建文档吗"只会让人误以为要丢内容。
+      if (this.workspace) return this.workspace.newTab();
+
       if (confirm('确定要新建文档吗？未保存的内容可在历史记录中恢复。')) {
         this.docName = '未命名_洛谷文章.md';
         this._fileHandle = null;
@@ -2457,12 +2473,21 @@ const safeStorage = {
         if (this.docNameInput) this.docNameInput.value = this.docName;
         this.resetCalloutToggles();
         this.setContent(text);
+        // 让面板知道这份文档存在。拖进窗口、系统"打开方式"、浏览器里选文件都走这里，
+        // 全都不经过 openPath()——不通知的话，右侧渲染着内容，左侧却写着"没有打开的文件"。
+        if (this.workspace) {
+          this.workspace.adoptExternal({ name: file.name, content: text, path: file.path || null });
+        }
         this.showToast(`已成功打开文件: ${file.name}`, 'success');
       };
       reader.readAsText(file);
     }
 
     async triggerFileOpen() {
+      // 桌面版：交给面板的原生对话框。打开的文件会成为真正的标签页（带路径、能写回），
+      // 而不是一份"打开完就找不到出处"的内容。
+      if (this.workspace) return this.workspace.openFileDialog();
+
       // Prefer the File System Access API: it hands back a handle, which is what
       // lets Ctrl+S later overwrite the same file instead of re-downloading a copy.
       if (typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function') {

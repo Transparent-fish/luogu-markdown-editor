@@ -519,13 +519,18 @@ const FAKE_FS = `
     '文档模型里不再留着已删除的路径');
 
   // ---- 7.5 关到零个标签：空状态 ---------------------------------------------
-  await p.evaluate(() => { window.__CONFIRM = true; });
   const tabsAtStart = await tabCount();
-  await p.evaluate(async () => {
+  await p.evaluate(() => {
     const ws = LuoguEditor.workspace;
-    while (ws.docs.length) await ws.closeTab(0);
+    ws._closingAll = (async () => { while (ws.docs.length) await ws.closeTab(0); })();
   });
-  await p.waitForTimeout(500);
+  for (let i = 0; i < 25; i += 1) {
+    if (!(await p.evaluate(() => !!document.querySelector('.ws-ask')))) break;
+    await p.click('.ws-ask-btn[data-act="discard"]');
+    await p.waitForTimeout(200);
+  }
+  await p.evaluate(() => LuoguEditor.workspace._closingAll);
+  await p.waitForTimeout(400);
   ck(await tabCount() === 0, `可以一个标签都不留（起始 ${tabsAtStart} 个，全部关掉）`);
   ck(await p.evaluate(() => !document.getElementById('wsWatermark').hidden), '空状态引导出现');
   ck(await p.evaluate(() => document.getElementById('editorTextarea').readOnly === true),

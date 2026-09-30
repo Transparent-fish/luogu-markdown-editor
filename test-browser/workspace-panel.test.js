@@ -39,6 +39,19 @@ const FAKE_FS = `{
   const b = await chromium.launch();
   let pass = 0, fail = 0;
   const ck = (c, n, x) => { c ? (pass++, console.log('  ✅', n)) : (fail++, console.log('  ❌', n, x || '')); };
+  // 关一个脏标签页会弹出三选一对话框（保存 / 不保存 / 取消）。测试要像人一样点它，
+  // 而不是指望某个全局开关——对话框本身就是被测对象之一。
+  const answerUnsaved = async (page, act) => {
+    await page.waitForSelector('.ws-ask', { timeout: 5000 });
+    await page.click(`.ws-ask-btn[data-act="${act}"]`);
+    await page.waitForTimeout(300);
+  };
+  const drainUnsaved = async (page, act) => {
+    for (let i = 0; i < 25; i += 1) {
+      if (!(await page.evaluate(() => !!document.querySelector('.ws-ask')))) return;
+      await answerUnsaved(page, act);
+    }
+  };
 
   // ---- 1. plain browser: the panel must not exist at all ---------------------
   {
@@ -196,33 +209,41 @@ const FAKE_FS = `{
     return v.includes('/proj/a.md');
   }), '最近列表持久化到 localStorage');
 
-  // Closing a dirty tab asks first.
+  // Closing a dirty tab asks first — with three answers, not two.
   await p.evaluate(() => {
     const ta = document.getElementById('editorTextarea');
     ta.value = '又改了。'; ta.dispatchEvent(new Event('input', { bubbles: true }));
-    window.__CONFIRM = false;
   });
   await p.waitForTimeout(300);
   const before = await p.evaluate(() => document.querySelectorAll('.ws-tab').length);
-  await p.evaluate(() => LuoguEditor.workspace.closeTab(LuoguEditor.workspace.active));
-  await p.waitForTimeout(400);
+  await p.evaluate(() => { LuoguEditor.workspace.closeTab(LuoguEditor.workspace.active); });
+  await p.waitForTimeout(300);
+  ck(await p.evaluate(() => !!document.querySelector('.ws-ask')), '关闭未保存的标签页会询问');
+  ck(await p.evaluate(() => {
+    const acts = [...document.querySelectorAll('.ws-ask-btn')].map((b) => b.getAttribute('data-act'));
+    return acts.includes('save') && acts.includes('discard') && acts.includes('cancel');
+  }), '对话框提供 保存 / 不保存 / 取消 三个选项');
+
+  await answerUnsaved(p, 'cancel');
   ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length) === before,
-    '未保存时取消关闭则保留标签页');
-  await p.evaluate(() => { window.__CONFIRM = true; });
-  await p.evaluate(() => LuoguEditor.workspace.closeTab(LuoguEditor.workspace.active));
-  await p.waitForTimeout(400);
+    '选"取消"则保留标签页');
+
+  await p.evaluate(() => { LuoguEditor.workspace.closeTab(LuoguEditor.workspace.active); });
+  await answerUnsaved(p, 'discard');
   ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length) === before - 1,
-    '确认后关闭标签页');
+    '选"不保存"则直接关闭');
 
   // Closing the last tab is allowed. The editor goes to its empty state instead of
   // silently spawning a blank document; the textarea turns read-only because with no
   // tab there is nowhere for typed text to go.
-  await p.evaluate(async () => {
-    window.__CONFIRM = true;
+  await p.evaluate(() => {
     const ws = LuoguEditor.workspace;
-    while (ws.docs.length) await ws.closeTab(0);
+    // 不 await：脏文档会弹对话框，等着点，await 会把测试挂死。
+    ws._closingAll = (async () => { while (ws.docs.length) await ws.closeTab(0); })();
   });
-  await p.waitForTimeout(500);
+  await drainUnsaved(p, 'discard');
+  await p.evaluate(() => LuoguEditor.workspace._closingAll);
+  await p.waitForTimeout(300);
   ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length === 0),
     '可以关掉所有标签页（不自动补空白页）');
   ck(await p.evaluate(() => !document.getElementById('wsWatermark').hidden),

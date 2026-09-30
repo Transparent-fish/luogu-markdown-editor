@@ -101,6 +101,16 @@
           <button class="dropdown-item" id="lintToggleItem" onclick="LuoguEditor.toggleLintDisplay()">
             <span id="lintToggleMark">✅</span> 显示排版问题
           </button>
+          <!-- 下面两项依赖"文件树 + 真实磁盘"，所以只在桌面版显示（.ws-only 由
+               has-workspace 类解锁）。自动保存到文件在网页版没有意义：那儿保存是下载副本。 -->
+          <button class="dropdown-item ws-only" id="autoSaveToggleItem"
+                  onclick="LuoguEditor.workspace.setAutosaveToFile(!LuoguEditor.workspace.autosaveToFile)">
+            <span id="autoSaveMark">✅</span> 自动保存到文件
+          </button>
+          <button class="dropdown-item ws-only" id="formatOnSaveToggleItem"
+                  onclick="LuoguEditor.workspace.setFormatOnSave(!LuoguEditor.workspace.formatOnSave)">
+            <span id="formatOnSaveMark">✅</span> 保存时自动排版
+          </button>
         </div>
       </div>
 
@@ -376,6 +386,12 @@
       <div class="status-item">
         <span class="status-dot"></span>
         <span id="saveStatusIndicator" role="status" aria-live="polite">已自动保存</span>
+      </div>
+      <!-- 草稿缓存与"写回文件"是两件事，状态栏分开显示，免得看到"已自动保存"就以为
+           磁盘上的文件也更新了。仅桌面版可见。 -->
+      <div class="status-item ws-only" id="fileSaveStatusItem">
+        <span class="status-dot"></span>
+        <span id="fileSaveStatus" role="status" aria-live="polite">尚未写回文件</span>
       </div>
       <div class="status-item">
         <span id="docStatsText">0 行 | 0 字 | 0 公式</span>

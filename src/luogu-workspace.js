@@ -21,6 +21,10 @@
   'use strict';
 
   const MAX_RECENT = 12;
+  // 打字停下来多久之后写盘。太短会在连续输入时反复写，太长又失去"自动"的意义。
+  const AUTOSAVE_IDLE_MS = 2500;
+  const AUTOSAVE_KEY = 'luogu_workspace_autosave';
+  const FORMAT_ON_SAVE_KEY = 'luogu_workspace_format_on_save';
   const RECENT_KEY = 'luogu_editor_recent_files';
   const WIDTH_KEY = 'luogu_workspace_width';
   const WIDTH_DEFAULT = 240;
@@ -265,7 +269,58 @@
       this._visible = [];       // last rendered rows, in order (keyboard nav, shift-range)
       this._menu = null;
       this._dragPaths = null;
+      this._autosaveTimer = null;
+      // 两个开关默认打开：都是"不用操心"的功能，随时可以在设置里关掉。
+      this.autosaveToFile = this._readFlag(AUTOSAVE_KEY, true);
+      this.formatOnSave = this._readFlag(FORMAT_ON_SAVE_KEY, true);
       this.enabled = !!this.fs;
+    }
+
+    // ---- 偏好 ---------------------------------------------------------------
+
+    _readFlag(key, fallback) {
+      try {
+        const raw = global.localStorage && global.localStorage.getItem(key);
+        return raw === null || raw === undefined ? fallback : raw === '1';
+      } catch (e) { return fallback; }
+    }
+
+    _writeFlag(key, on) {
+      try { global.localStorage && global.localStorage.setItem(key, on ? '1' : '0'); } catch (e) { /* 记不住不影响使用 */ }
+    }
+
+    setAutosaveToFile(on) {
+      this.autosaveToFile = !!on;
+      this._writeFlag(AUTOSAVE_KEY, this.autosaveToFile);
+      this._syncSettingsMenu();
+      this._setSaveStatus(this.autosaveToFile ? '已开启自动保存到文件' : '已关闭自动保存到文件');
+      if (this.autosaveToFile) this._scheduleAutoSave();
+      return this.autosaveToFile;
+    }
+
+    setFormatOnSave(on) {
+      this.formatOnSave = !!on;
+      this._writeFlag(FORMAT_ON_SAVE_KEY, this.formatOnSave);
+      this._syncSettingsMenu();
+      this._toast(this.formatOnSave ? '保存时将自动按洛谷规范排版' : '已关闭保存时自动排版', 'info');
+      return this.formatOnSave;
+    }
+
+    /** 设置菜单里的勾选状态（菜单项由 index.html 提供，浏览器下是隐藏的）。 */
+    _syncSettingsMenu() {
+      const a = document.getElementById('autoSaveMark');
+      const f = document.getElementById('formatOnSaveMark');
+      if (a) a.textContent = this.autosaveToFile ? '✅' : '⬜';
+      if (f) f.textContent = this.formatOnSave ? '✅' : '⬜';
+    }
+
+    /** 状态栏那一行：自动保存到底有没有发生，得看得见。 */
+    _setSaveStatus(text) {
+      const el = document.getElementById('fileSaveStatus');
+      if (el) {
+        el.textContent = text;
+        el.parentElement && (el.parentElement.hidden = !this.enabled);
+      }
     }
 
     // ---- lifecycle -----------------------------------------------------------
@@ -300,6 +355,7 @@
           d.dirty = true;
           this.renderTabs();
           this._markDirtyInTree();
+          this._scheduleAutoSave();
         }
       });
     }
@@ -312,6 +368,84 @@
       host.querySelectorAll('.ws-node[data-path]').forEach((row) => {
         row.classList.toggle('is-dirty', dirty.has(row.getAttribute('data-path')));
       });
+    }
+
+    // ---- 自动保存 -----------------------------------------------------------
+
+    /** 每次输入后重置计时器：写盘发生在"停下来"之后，而不是每敲一个字。 */
+    _scheduleAutoSave() {
+      if (!this.autosaveToFile) return;
+      clearTimeout(this._autosaveTimer);
+      this._autosaveTimer = setTimeout(() => this.autosaveNow(), AUTOSAVE_IDLE_MS);
+    }
+
+    /**
+     * 把有路径且已修改的文档写回磁盘。
+     *
+     * 刻意不在这里做格式化：内容正在被编辑，替换文本会让光标跳走。格式化只发生在
+     * 显式保存（Ctrl+S / 关闭时选"保存"）——那里用户本来就预期内容会变。
+     * 没有路径的新文档一律跳过：自动保存绝不弹"另存为"对话框。
+     */
+    async autosaveNow() {
+      if (!this.autosaveToFile) return 0;
+      const targets = this.docs.filter((d) => d.dirty && d.path);
+      if (!targets.length) return 0;
+      let saved = 0;
+      for (const d of targets) {
+        try {
+          await this.fs.writeTextFile(d.path, d.content);
+        } catch (e) {
+          this._setSaveStatus(`⚠ 自动保存失败：${baseName(d.path)}`);
+          this._toast(`自动保存失败（${baseName(d.path)}）：${e && e.message ? e.message : e}`, 'error');
+          return saved;
+        }
+        d.dirty = false;
+        saved += 1;
+      }
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      this._setSaveStatus(`已自动保存到文件 ${hh}:${mm}:${ss}`);
+      this.renderTabs();
+      this._markDirtyInTree();
+      return saved;
+    }
+
+    // ---- 外部打开的文档 ------------------------------------------------------
+
+    /**
+     * 编辑器从工作区之外拿到了一份文档：把文件拖进窗口、用系统的"打开方式"拉起、
+     * 或者浏览器里选了文件。
+     *
+     * 这些路径都不经过 openPath()，面板原本一无所知——于是会出现"右边有预览、
+     * 左边写着没有打开的文件"这种自相矛盾的画面。这里把它补成一个标签页。
+     * 不调用 setContent：内容已经在编辑区里了，再灌一次会把光标顶回开头。
+     */
+    adoptExternal({ name, content, path }) {
+      if (!this.enabled) return;
+      const cur = this.docs[this.active];
+      // 空白未命名页直接顶替掉，否则每拖一个文件就多留一个空标签。
+      if (cur && !cur.path && !cur.dirty && !cur.content) {
+        cur.name = name || cur.name;
+        cur.content = content || '';
+        cur.path = path || null;
+        cur.dirty = false;
+      } else if (path) {
+        const existing = this.indexOfPath(path);
+        if (existing >= 0) { this.activate(existing); return; }
+        this.docs.push({ name, content: content || '', path, dirty: false });
+        this.active = this.docs.length - 1;
+      } else {
+        this.docs.push({ name, content: content || '', path: null, dirty: false });
+        this.active = this.docs.length - 1;
+      }
+      const d = this.docs[this.active];
+      this.editor.docName = d.name;
+      const nameInput = document.getElementById('docNameInput');
+      if (nameInput) nameInput.value = d.name;
+      if (path) this._pushRecent(path);
+      this.render();
     }
 
     // ---- document model ------------------------------------------------------
@@ -384,12 +518,65 @@
       this.render();
     }
 
+    /**
+     * "还有未保存的改动"三选一：保存 / 不保存 / 取消。
+     *
+     * 宿主自带的 confirm 只有两个按钮，于是用户被迫在"丢掉改动"和"关不掉"之间选，
+     * 偏偏少了最常用的那个——先存再关。所以这个对话框自己画。
+     */
+    _askUnsaved(name) {
+      return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active ws-ask';
+        overlay.innerHTML = `
+          <div class="modal-dialog ws-ask-dialog" role="dialog" aria-modal="true" aria-labelledby="wsAskTitle">
+            <h3 class="ws-ask-title" id="wsAskTitle"></h3>
+            <p class="ws-ask-body"></p>
+            <div class="ws-ask-buttons">
+              <button type="button" class="ws-ask-btn is-primary" data-act="save">保存</button>
+              <button type="button" class="ws-ask-btn is-danger" data-act="discard">不保存</button>
+              <button type="button" class="ws-ask-btn" data-act="cancel">取消</button>
+            </div>
+          </div>`;
+        // 文件名来自磁盘，用 textContent 写入，不做字符串拼接。
+        overlay.querySelector('.ws-ask-title').textContent = '是否保存更改？';
+        overlay.querySelector('.ws-ask-body').textContent =
+          `「${name}」有未保存的改动。不保存的话，这些改动会丢失。`;
+
+        let settled = false;
+        const done = (choice) => {
+          if (settled) return;
+          settled = true;
+          document.removeEventListener('keydown', onKey, true);
+          overlay.remove();
+          resolve(choice);
+        };
+        const onKey = (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done('cancel'); }
+          else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done('save'); }
+        };
+        overlay.querySelectorAll('.ws-ask-btn').forEach((btn) => {
+          btn.onclick = () => done(btn.getAttribute('data-act'));
+        });
+        document.addEventListener('keydown', onKey, true);
+        document.body.appendChild(overlay);
+        const primary = overlay.querySelector('.ws-ask-btn.is-primary');
+        if (primary) primary.focus();
+      });
+    }
+
     async closeTab(i) {
       const d = this.docs[i];
       if (!d) return;
       if (d.dirty) {
-        const ok = await this.fs.confirm(`「${d.name}」尚未保存，仍要关闭吗？`);
-        if (!ok) return;
+        const choice = await this._askUnsaved(d.name);
+        if (choice === 'cancel') return;
+        if (choice === 'save') {
+          const ok = await this.saveIndex(i);
+          // 保存失败、或用户在"另存为"里点了取消：那就别关，别把改动带走。
+          if (!ok) return;
+          if (this.docs.indexOf(d) !== i) i = this.docs.indexOf(d);
+        }
       }
       this.docs.splice(i, 1);
       if (!this.docs.length) {
@@ -440,29 +627,49 @@
       if (mark) mark.hidden = !empty;
     }
 
-    async saveActive() {
-      const d = this.docs[this.active];
+    saveActive() {
+      return this.saveIndex(this.active);
+    }
+
+    /** 按索引保存，不只是当前标签页——关闭一个后台的脏标签页时也要能存。 */
+    async saveIndex(i) {
+      const d = this.docs[i];
       if (!d) { this._toast('当前没有打开的文件', 'info'); return false; }
-      d.content = this.editor.getContent();
+      // 只有正在编辑的文档才以编辑区为准；后台标签页的内容就是它自己存的。
+      if (i === this.active) d.content = this.editor.getContent();
+
       let path = d.path;
       if (!path) {
         path = await this.fs.saveAs({
           defaultPath: d.name,
           filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
         });
-        if (!path) return false;
+        if (!path) return false;   // 用户在另存为里取消了：当作没保存
       }
+
+      let content = d.content;
+      let formatted = false;
+      if (this.formatOnSave && this.editor.linter && this.editor.linter.formatSpacing) {
+        const fixed = this.editor.linter.formatSpacing(content);
+        if (fixed !== content) { content = fixed; formatted = true; }
+      }
+
       try {
-        await this.fs.writeTextFile(path, d.content);
+        await this.fs.writeTextFile(path, content);
       } catch (e) {
         this._toast(`保存失败：${e && e.message ? e.message : e}`, 'error');
         return false;
       }
+
       const isNew = d.path !== path;
       d.path = path;
       d.name = baseName(path);
+      d.content = content;
       d.dirty = false;
-      this.editor.docName = d.name;
+      // 排版改动了内容，编辑区得跟着变，否则界面显示的和文件里存的不是一回事。
+      // pushHistory = true：格式化是内容变更，用户应当能撤销它。
+      if (i === this.active && formatted) this.editor.setContent(content, true);
+      this.editor.docName = this.docs[this.active] ? this.docs[this.active].name : d.name;
       this._pushRecent(path);
       // A brand-new file has to appear in the tree it was saved into.
       if (isNew && this.rootPath && isInside(path, this.rootPath)) {
@@ -472,7 +679,8 @@
         this._revealTarget = path;
       }
       this.render();
-      this._toast(`已保存到「${d.name}」`, 'success');
+      this._toast(formatted ? `已按洛谷规范排版后保存「${d.name}」` : `已保存到「${d.name}」`, 'success');
+      this._setSaveStatus(`已保存到文件 ${d.name}`);
       return true;
     }
 

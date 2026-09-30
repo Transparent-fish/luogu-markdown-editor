@@ -3424,6 +3424,43 @@ body.ws-resizing * { cursor: col-resize !important; }
 .ws-menu-item.is-danger:focus { background: var(--luogu-red-light); }
 .ws-menu-sep { height: 1px; margin: 4px 6px; background: var(--border-color); }
 
+/* 只在桌面版（有文件树）出现的控件。 */
+.ws-only { display: none !important; }
+.has-workspace .dropdown-item.ws-only { display: flex !important; }
+.has-workspace .status-item.ws-only { display: flex !important; }
+
+/* "是否保存更改？" 三选一对話框：保存 / 不保存 / 取消。
+   宿主自带的 confirm 只有两个按钮，缺的正是最常用的那个"保存"。 */
+.ws-ask-dialog {
+  width: min(420px, 92vw);
+  padding: 20px 22px 16px;
+  border-radius: 10px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .28);
+}
+.ws-ask-title { margin: 0 0 8px; font-size: 15px; color: var(--text-primary); }
+.ws-ask-body { margin: 0 0 18px; font-size: 13px; line-height: 1.7; color: var(--text-secondary); }
+.ws-ask-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+.ws-ask-btn {
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ws-ask-btn:hover { border-color: var(--border-focus); }
+.ws-ask-btn.is-primary {
+  color: #fff;
+  background: var(--luogu-blue);
+  border-color: var(--luogu-blue);
+}
+.ws-ask-btn.is-primary:hover { background: var(--luogu-blue-dark, var(--luogu-blue)); }
+.ws-ask-btn.is-danger { color: var(--luogu-red); }
+.ws-ask-btn.is-danger:hover { border-color: var(--luogu-red); background: var(--luogu-red-light); }
+.ws-ask-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+
 /* --- empty state: no file open ------------------------------------------------
    Shown when the last tab is closed. The textarea is made read-only at the same
    time (LuoguWorkspace._applyEmptyState) — with no tab there is nowhere to save

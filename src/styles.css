@@ -579,6 +579,9 @@ html, body {
 
 /* Resizer Splitter */
 .split-resizer {
+  /* 必须显式写 flex：两侧面板被拖成 `0 0 NN%` 之后，两者的 basis 相加就等于容器
+     宽度，分割条作为唯一还能收缩的伸缩项会被压成 0px —— 拖一次就"消失"了。 */
+  flex: 0 0 6px;
   width: 6px;
   height: 100%;
   background: var(--border-color);
@@ -631,6 +634,14 @@ html, body {
 .mode-typora .editor-pane,
 .mode-typora .split-resizer {
   display: none !important;
+}
+
+/* 分割条拖动会把内联 flex 写在两侧面板上；只剩一栏时必须中和掉，否则可见的那一栏
+   仍按拖动比例占宽，右侧留一片空白（!important 的样式表规则能压过内联样式）。 */
+.mode-editor-only .editor-pane,
+.mode-preview-only .preview-pane,
+.mode-typora .preview-pane {
+  flex: 1 1 auto !important;
 }
 
 .mode-typora .preview-pane {
@@ -2768,8 +2779,10 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
 /* An editor pinned over the element it edits, leaving the document's own layout
    untouched. A merged table cell cannot host an inline editor without the table
    reflowing around it, so the cell editor floats instead. */
-.preview-content.typora-mode .typora-editing/* Cell-local editing: the marker text is replaced by the input inside the same
-   <td>, so the un-merged skeleton around it keeps its own markers on screen. */
+/* Cell-local editing: the marker text is replaced by the input inside the same
+   <td>, so the un-merged skeleton around it keeps its own markers on screen.
+   （这里原本漏了一个 `{`：选择器与注释粘在一起，于是下面这条规则从未生效过，
+   单元格的 padding / 字号都没被归零。） */
 .preview-content.typora-mode td.typora-host-editing,
 .preview-content.typora-mode th.typora-host-editing {
   padding: 0 !important;
@@ -2796,7 +2809,8 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   border-radius: 3px;
   padding: 2px 4px;
   text-align: center;
-  background: #fff;
+  /* 曾经写死 #fff：暗色主题下点开 `^` / `<` 这类合并标记格，编辑框是个刺眼的白块。 */
+  background: var(--bg-primary);
 }
 
 .typora-overlay {

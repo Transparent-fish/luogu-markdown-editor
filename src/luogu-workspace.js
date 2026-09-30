@@ -20,6 +20,12 @@
 (function (global) {
   'use strict';
 
+  // i18n：应用里是真正的翻译函数（src/i18n.js 先于本文件加载）；
+  // 单元测试（node 直接 require 本文件）里它退化成"原样返回 + 插值"。
+  const T = (global.LuoguI18n && global.LuoguI18n.t) || ((s, v) => (v
+    ? String(s).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(v, k) ? v[k] : m))
+    : s));
+
   const MAX_RECENT = 12;
   // 打字停下来多久之后写盘。太短会在连续输入时反复写，太长又失去"自动"的意义。
   const AUTOSAVE_IDLE_MS = 2500;
@@ -313,7 +319,7 @@
       this.autosaveToFile = !!on;
       this._writeFlag(AUTOSAVE_KEY, this.autosaveToFile);
       this._syncSettingsMenu();
-      this._setSaveStatus(this.autosaveToFile ? '已开启自动保存到文件' : '已关闭自动保存到文件');
+      this._setSaveStatus(this.autosaveToFile ? T('已开启自动保存到文件') : T('已关闭自动保存到文件'));
       if (this.autosaveToFile) this._scheduleAutoSave();
       return this.autosaveToFile;
     }
@@ -322,7 +328,7 @@
       this.formatOnSave = !!on;
       this._writeFlag(FORMAT_ON_SAVE_KEY, this.formatOnSave);
       this._syncSettingsMenu();
-      this._toast(this.formatOnSave ? '保存时将自动按洛谷规范排版' : '已关闭保存时自动排版', 'info');
+      this._toast(this.formatOnSave ? T('保存时将自动按洛谷规范排版') : T('已关闭保存时自动排版'), 'info');
       return this.formatOnSave;
     }
 
@@ -365,7 +371,7 @@
         // loses the draft they had open when the panel appeared.
         this.docs.push({
           path: null,
-          name: this.editor.docName || '未命名.md',
+          name: this.editor.docName || T('未命名.md'),
           content: this.editor.getContent(),
           dirty: false,
         });
@@ -467,8 +473,8 @@
         try {
           await this.fs.writeTextFile(d.path, d.content);
         } catch (e) {
-          this._setSaveStatus(`⚠ 自动保存失败：${baseName(d.path)}`);
-          this._toast(`自动保存失败（${baseName(d.path)}）：${e && e.message ? e.message : e}`, 'error');
+          this._setSaveStatus(T('⚠ 自动保存失败：{a}', { a: baseName(d.path) }));
+          this._toast(T('自动保存失败（{a}）：{b}', { a: baseName(d.path), b: e && e.message ? e.message : e }), 'error');
           return saved;
         }
         d.dirty = false;
@@ -478,7 +484,7 @@
       const hh = String(now.getHours()).padStart(2, '0');
       const mm = String(now.getMinutes()).padStart(2, '0');
       const ss = String(now.getSeconds()).padStart(2, '0');
-      this._setSaveStatus(`已自动保存到文件 ${hh}:${mm}:${ss}`);
+      this._setSaveStatus(T('已自动保存到文件 {a}:{b}:{c}', { a: hh, b: mm, c: ss }));
       this.renderTabs();
       this._markDirtyInTree();
       return saved;
@@ -534,12 +540,12 @@
       const kind = classifyFile(name);
       if (kind === 'binary' && !(opts && opts.force)) {
         const ok = await this.fs.confirm(
-          `「${name}」看起来不是文本文件。\n\n`
-            + '按文本打开只会看到乱码，而且一旦保存，这些乱码会覆盖原文件。\n\n仍要打开吗？',
-          { kind: 'warning', title: '不是文本文件', okLabel: '仍要打开', cancelLabel: '取消' },
+          T('「{a}」看起来不是文本文件。\\n\\n', { a: name })
+            + T('按文本打开只会看到乱码，而且一旦保存，这些乱码会覆盖原文件。\n\n仍要打开吗？'),
+          { kind: 'warning', title: T('不是文本文件'), okLabel: T('仍要打开'), cancelLabel: T('取消') },
         );
         if (!ok) return;
-        this._toast(`已按文本打开「${name}」，请不要保存：写回会损坏原文件`, 'error');
+        this._toast(T('已按文本打开「{a}」，请不要保存：写回会损坏原文件', { a: name }), 'error');
       } else if (kind === 'text') {
         this._hintNotMarkdown(name);
       }
@@ -548,7 +554,7 @@
       try {
         content = await this.fs.readTextFile(path);
       } catch (e) {
-        this._toast(`打不开 ${baseName(path)}：${e && e.message ? e.message : e}`, 'error');
+        this._toast(T('打不开 {a}：{b}', { a: baseName(path), b: e && e.message ? e.message : e }), 'error');
         return;
       }
       this.docs.push({ path, name: baseName(path), content, dirty: false });
@@ -562,10 +568,10 @@
      */
     _hintNotMarkdown(name) {
       this._hintedExts = this._hintedExts || new Set();
-      const ext = extensionOf(name) || '(无扩展名)';
+      const ext = extensionOf(name) || T('(无扩展名)');
       if (this._hintedExts.has(ext)) return;
       this._hintedExts.add(ext);
-      this._toast(`「${name}」不是 Markdown 文档：预览会按 Markdown 规则渲染，保存时原样写回`, 'info');
+      this._toast(T('「{a}」不是 Markdown 文档：预览会按 Markdown 规则渲染，保存时原样写回', { a: name }), 'info');
     }
 
     activate(i) {
@@ -611,9 +617,9 @@
             </div>
           </div>`;
         // 文件名来自磁盘，用 textContent 写入，不做字符串拼接。
-        overlay.querySelector('.ws-ask-title').textContent = '是否保存更改？';
+        overlay.querySelector('.ws-ask-title').textContent = T('是否保存更改？');
         overlay.querySelector('.ws-ask-body').textContent =
-          `「${name}」有未保存的改动。不保存的话，这些改动会丢失。`;
+          T('「{a}」有未保存的改动。不保存的话，这些改动会丢失。', { a: name });
 
         let settled = false;
         const done = (choice) => {
@@ -668,13 +674,13 @@
     }
 
     newTab() {
-      this.docs.push({ path: null, name: '未命名.md', content: '', dirty: false });
+      this.docs.push({ path: null, name: T('未命名.md'), content: '', dirty: false });
       this.activate(this.docs.length - 1);
     }
 
     /** 没有标签页时把编辑区清空。 */
     _clearEditor() {
-      this.editor.docName = '未命名.md';
+      this.editor.docName = T('未命名.md');
       const nameInput = document.getElementById('docNameInput');
       if (nameInput) nameInput.value = '';
       this.editor.resetCalloutToggles && this.editor.resetCalloutToggles();
@@ -727,7 +733,7 @@
     /** 按索引保存，不只是当前标签页——关闭一个后台的脏标签页时也要能存。 */
     async saveIndex(i) {
       const d = this.docs[i];
-      if (!d) { this._toast('当前没有打开的文件', 'info'); return false; }
+      if (!d) { this._toast(T('当前没有打开的文件'), 'info'); return false; }
       // 只有正在编辑的文档才以编辑区为准；后台标签页的内容就是它自己存的。
       if (i === this.active) d.content = this.editor.getContent();
 
@@ -753,7 +759,7 @@
       try {
         await this.fs.writeTextFile(path, content);
       } catch (e) {
-        this._toast(`保存失败：${e && e.message ? e.message : e}`, 'error');
+        this._toast(T('保存失败：{a}', { a: e && e.message ? e.message : e }), 'error');
         return false;
       }
 
@@ -775,8 +781,8 @@
         this._revealTarget = path;
       }
       this.render();
-      this._toast(formatted ? `已按洛谷规范排版后保存「${d.name}」` : `已保存到「${d.name}」`, 'success');
-      this._setSaveStatus(`已保存到文件 ${d.name}`);
+      this._toast(formatted ? T('已按洛谷规范排版后保存「{a}」', { a: d.name }) : T('已保存到「{a}」', { a: d.name }), 'success');
+      this._setSaveStatus(T('已保存到文件 {a}', { a: d.name }));
       return true;
     }
 
@@ -784,7 +790,7 @@
 
     async openFolderDialog() {
       if (!this.isDesktop) {
-        this._toast('网页版读不到本地文件夹，请下载桌面版，或用"打开文件"逐个打开', 'info');
+        this._toast(T('网页版读不到本地文件夹，请下载桌面版，或用"打开文件"逐个打开'), 'info');
         return;
       }
       const dir = await this.fs.openFolder();
@@ -976,14 +982,14 @@
       box.className = 'ws-empty ws-empty-open';
       const hint = document.createElement('div');
       hint.className = 'ws-empty-hint';
-      hint.textContent = '未打开文件夹';
+      hint.textContent = T('未打开文件夹');
       const open = document.createElement('button');
       open.className = 'ws-empty-btn';
-      open.textContent = '打开文件夹';
+      open.textContent = T('打开文件夹');
       open.onclick = () => this.openFolderDialog();
       const openFile = document.createElement('button');
       openFile.className = 'ws-empty-btn ws-empty-btn-quiet';
-      openFile.textContent = '打开文件';
+      openFile.textContent = T('打开文件');
       openFile.onclick = () => this.openFileDialog();
       box.appendChild(hint);
       box.appendChild(open);
@@ -1326,7 +1332,7 @@
 
     /** Reject names no filesystem will take, before asking the host and getting an error. */
     _checkName(name) {
-      if (!name) return '名字不能为空';
+      if (!name) return T('名字不能为空');
       if (BAD_NAME.test(name)) return '名字里不能包含 \\ / : * ? " < > |';
       if (/^\.+$/.test(name)) return '这个名字不可用';
       if (name.endsWith(' ') || name.endsWith('.')) return '名字不能以空格或点结尾';
@@ -1353,7 +1359,7 @@
       const depth = node ? (node.isDir ? node.depth + 1 : node.depth) : 1;
       if (node && node.isDir && !this.treeState[node.path]) this.treeState[node.path] = true;
 
-      const name = isDir ? '' : '未命名.md';
+      const name = isDir ? '' : T('未命名.md');
       this._openInlineInput(node ? node.path : null, {
         depth,
         value: name,
@@ -1362,16 +1368,16 @@
           const bad = this._checkName(input);
           if (bad) { this._toast(bad, 'error'); return; }
           const path = joinPath(dir, input);
-          if (await this._pathExists(path)) { this._toast(`「${input}」已存在`, 'error'); return; }
+          if (await this._pathExists(path)) { this._toast(T('「{a}」已存在', { a: input }), 'error'); return; }
           try {
             if (isDir) {
-              if (!this.fs.mkdir) throw new Error('该主机不支持新建文件夹');
+              if (!this.fs.mkdir) throw new Error(T('该主机不支持新建文件夹'));
               await this.fs.mkdir(path);
             } else {
               await this.fs.writeTextFile(path, '');
             }
           } catch (e) {
-            this._toast(`创建失败：${e && e.message ? e.message : e}`, 'error');
+            this._toast(T('创建失败：{a}', { a: e && e.message ? e.message : e }), 'error');
             return;
           }
           this._invalidate(dir);
@@ -1387,7 +1393,7 @@
     _beginRename() {
       const targets = this._targets();
       if (targets.length !== 1) {
-        if (targets.length) this._toast('一次只能重命名一个文件', 'error');
+        if (targets.length) this._toast(T('一次只能重命名一个文件'), 'error');
         return;
       }
       const path = targets[0];
@@ -1403,12 +1409,12 @@
           const bad = this._checkName(input);
           if (bad) { this._toast(bad, 'error'); return; }
           const next = joinPath(dir, input);
-          if (await this._pathExists(next)) { this._toast(`「${input}」已存在`, 'error'); return; }
-          if (!this.fs.rename) { this._toast('该主机不支持重命名', 'error'); return; }
+          if (await this._pathExists(next)) { this._toast(T('「{a}」已存在', { a: input }), 'error'); return; }
+          if (!this.fs.rename) { this._toast(T('该主机不支持重命名'), 'error'); return; }
           try {
             await this.fs.rename(path, next);
           } catch (e) {
-            this._toast(`重命名失败：${e && e.message ? e.message : e}`, 'error');
+            this._toast(T('重命名失败：{a}', { a: e && e.message ? e.message : e }), 'error');
             return;
           }
           this._afterMove(path, next);
@@ -1417,7 +1423,7 @@
           this.focusPath = next;
           this._revealTarget = next;
           await this.render();
-          this._toast(`已重命名为「${input}」`, 'success');
+          this._toast(T('已重命名为「{a}」', { a: input }), 'success');
         },
       });
     }
@@ -1425,17 +1431,18 @@
     async _deleteSelection() {
       const targets = this._targets();
       if (!targets.length) return;
-      if (!this.fs.remove) { this._toast('该主机不支持删除', 'error'); return; }
+      if (!this.fs.remove) { this._toast(T('该主机不支持删除'), 'error'); return; }
 
       const names = targets.map((p) => baseName(p));
       const openDirty = this.docs.filter((d) => d.dirty && d.path && targets.some((t) => isInside(d.path, t)));
       const what = targets.length === 1
         ? `「${names[0]}」`
-        : `${targets.length} 个项目（${names.slice(0, 3).join('、')}${names.length > 3 ? '…' : ''}）`;
+        : T('{a} 个项目（{b}{c}）', { a: targets.length, b: names.slice(0, 3).join('、'), c: names.length > 3 ? '…' : '' });
       const extra = openDirty.length
-        ? `\n\n其中 ${openDirty.map((d) => `「${d.name}」`).join('')} 有未保存的修改，一并丢弃。`
+        ? T('\n\n其中 {a} 有未保存的修改，一并丢弃。',
+          { a: openDirty.map((d) => T('「{a}」', { a: d.name })).join(T('、')) })
         : '';
-      const ok = await this.fs.confirm(`确定要删除 ${what} 吗？此操作不可撤销。${extra}`);
+      const ok = await this.fs.confirm(T('确定要删除 {a} 吗？此操作不可撤销。{b}', { a: what, b: extra }));
       if (!ok) return;
 
       const failed = [];
@@ -1452,7 +1459,7 @@
       this.selection = new Set();
       this.focusPath = null;
       await this.render();
-      if (failed.length) this._toast(`部分删除失败：${failed.join('；')}`, 'error');
+      if (failed.length) this._toast(T('部分删除失败：{a}', { a: failed.join('；') }), 'error');
       else this._toast(targets.length === 1 ? `已删除「${names[0]}」` : `已删除 ${targets.length} 个项目`, 'success');
     }
 
@@ -1489,7 +1496,7 @@
         this._markDragging(this._dragPaths);
         document.body.classList.add('ws-dragging');
         this._showGhost(this._dragPaths.length > 1
-          ? `${this._dragPaths.length} 个项目`
+          ? T('{a} 个项目', { a: this._dragPaths.length })
           : baseName(st.path));
       }
       this._moveGhost(e);
@@ -1586,9 +1593,9 @@
       const skipped = [];
       for (const path of paths) {
         if (norm(parentOf(path)) === norm(destDir)) continue;      // already there
-        if (isInside(destDir, path)) { skipped.push(`${baseName(path)}（不能移动到自身内部）`); continue; }
+        if (isInside(destDir, path)) { skipped.push(T('{a}（不能移动到自身内部）', { a: baseName(path) })); continue; }
         const next = joinPath(destDir, baseName(path));
-        if (await this._pathExists(next)) { skipped.push(`${baseName(path)}（同名已存在）`); continue; }
+        if (await this._pathExists(next)) { skipped.push(T('{a}（同名已存在）', { a: baseName(path) })); continue; }
         try {
           await this.fs.rename(path, next);
         } catch (e) {
@@ -1605,7 +1612,7 @@
       if (moved) {
         this._toast(moved === 1 ? '已移动 1 个项目' : `已移动 ${moved} 个项目`, 'success');
       }
-      if (skipped.length) this._toast(`跳过：${skipped.join('；')}`, 'error');
+      if (skipped.length) this._toast(T('跳过：{a}', { a: skipped.join('；') }), 'error');
     }
 
     /**
@@ -1670,43 +1677,43 @@
       const items = [];
       const isRoot = node && node.isRoot;
       if (isRoot) {
-        items.push({ label: '新建文件', action: () => this._beginCreate(null, false) });
-        items.push({ label: '新建文件夹', action: () => this._beginCreate(null, true) });
+        items.push({ label: T('新建文件'), action: () => this._beginCreate(null, false) });
+        items.push({ label: T('新建文件夹'), action: () => this._beginCreate(null, true) });
         items.push({ sep: true });
-        items.push({ label: '刷新', action: () => this.refresh() });
-        items.push({ label: '全部折叠', action: () => this.collapseAll() });
+        items.push({ label: T('刷新'), action: () => this.refresh() });
+        items.push({ label: T('全部折叠'), action: () => this.collapseAll() });
         items.push({ sep: true });
-        items.push({ label: '在文件管理器中显示', action: () => this._revealInSystem(node.path) });
-        items.push({ label: '复制路径', action: () => this._copyPath(node.path) });
+        items.push({ label: T('在文件管理器中显示'), action: () => this._revealInSystem(node.path) });
+        items.push({ label: T('复制路径'), action: () => this._copyPath(node.path) });
         return items;
       }
       if (!node) {
-        items.push({ label: '新建文件', action: () => this._beginCreate(null, false) });
-        items.push({ label: '新建文件夹', action: () => this._beginCreate(null, true) });
+        items.push({ label: T('新建文件'), action: () => this._beginCreate(null, false) });
+        items.push({ label: T('新建文件夹'), action: () => this._beginCreate(null, true) });
         items.push({ sep: true });
-        items.push({ label: '刷新', action: () => this.refresh() });
-        items.push({ label: '全部折叠', action: () => this.collapseAll() });
+        items.push({ label: T('刷新'), action: () => this.refresh() });
+        items.push({ label: T('全部折叠'), action: () => this.collapseAll() });
         return items;
       }
 
       const many = this.selection.size > 1 && this.selection.has(node.path);
       if (node.isDir) {
-        items.push({ label: '新建文件', action: () => this._beginCreate(node.path, false) });
-        items.push({ label: '新建文件夹', action: () => this._beginCreate(node.path, true) });
+        items.push({ label: T('新建文件'), action: () => this._beginCreate(node.path, false) });
+        items.push({ label: T('新建文件夹'), action: () => this._beginCreate(node.path, true) });
         items.push({ sep: true });
-        items.push({ label: '展开', action: () => { this.treeState[node.path] = true; this.renderTree(); } });
-        items.push({ label: '折叠', action: () => { this.treeState[node.path] = false; this.renderTree(); } });
+        items.push({ label: T('展开'), action: () => { this.treeState[node.path] = true; this.renderTree(); } });
+        items.push({ label: T('折叠'), action: () => { this.treeState[node.path] = false; this.renderTree(); } });
       } else {
-        items.push({ label: '打开', action: () => this.openPath(node.path) });
+        items.push({ label: T('打开'), action: () => this.openPath(node.path) });
       }
       items.push({ sep: true });
-      if (!many) items.push({ label: '重命名', hint: 'F2', action: () => this._beginRename() });
-      items.push({ label: many ? `删除 ${this.selection.size} 个项目` : '删除', hint: 'Del', danger: true, action: () => this._deleteSelection() });
+      if (!many) items.push({ label: T('重命名'), hint: 'F2', action: () => this._beginRename() });
+      items.push({ label: many ? T('删除 {a} 个项目', { a: this.selection.size }) : T('删除'), hint: 'Del', danger: true, action: () => this._deleteSelection() });
       items.push({ sep: true });
       if (this.fs.revealInDir) {
-        items.push({ label: '在文件管理器中显示', action: () => this._revealInSystem(node.path) });
+        items.push({ label: T('在文件管理器中显示'), action: () => this._revealInSystem(node.path) });
       }
-      items.push({ label: '复制路径', action: () => this._copyPath(node.path) });
+      items.push({ label: T('复制路径'), action: () => this._copyPath(node.path) });
       return items;
     }
 
@@ -1800,7 +1807,7 @@
       try {
         await this.fs.revealInDir(path);
       } catch (e) {
-        this._toast(`无法在文件管理器中显示：${e && e.message ? e.message : e}`, 'error');
+        this._toast(T('无法在文件管理器中显示：{a}', { a: e && e.message ? e.message : e }), 'error');
       }
     }
 
@@ -1824,11 +1831,11 @@
           document.execCommand('copy');
           ta.remove();
         } catch (err) {
-          this._toast('复制失败', 'error');
+          this._toast(T('复制失败'), 'error');
           return;
         }
       }
-      this._toast('已复制路径', 'success');
+      this._toast(T('已复制路径'), 'success');
     }
 
     _repairRecent(oldPrefix, newPrefix) {
@@ -1905,7 +1912,7 @@
       // edge — and a handle inside it would sit on top of the tree's scrollbar.
       const resizer = document.createElement('div');
       resizer.className = 'ws-resizer';
-      resizer.title = '拖动调整宽度，双击复位';
+      resizer.title = T('拖动调整宽度，双击复位');
       pane.parentNode.insertBefore(resizer, pane);
 
 
@@ -1920,14 +1927,14 @@
       document.getElementById('wsMore').onclick = (e) => {
         const r = e.currentTarget.getBoundingClientRect();
         this._showMenu(r.left - 130, r.bottom + 2, [
-          { label: '打开文件夹…', action: () => this.openFolderDialog() },
-          { label: '打开文件…', action: () => this.openFileDialog() },
+          { label: T('打开文件夹…'), action: () => this.openFolderDialog() },
+          { label: T('打开文件…'), action: () => this.openFileDialog() },
           { sep: true },
-          { label: '新建标签页', action: () => this.newTab() },
-          { label: '刷新', action: () => this.refresh() },
-          { label: '全部折叠', action: () => this.collapseAll() },
+          { label: T('新建标签页'), action: () => this.newTab() },
+          { label: T('刷新'), action: () => this.refresh() },
+          { label: T('全部折叠'), action: () => this.collapseAll() },
           { sep: true },
-          { label: '收起侧栏', action: () => this.toggleCollapsed(true) },
+          { label: T('收起侧栏'), action: () => this.toggleCollapsed(true) },
         ]);
       };
 
@@ -1990,11 +1997,11 @@
         <div class="ws-watermark-actions">
           <button type="button" class="ws-watermark-btn" id="wsWmNew">新建文件</button>
           <button type="button" class="ws-watermark-btn" id="wsWmOpenFile">打开文件…</button>
-          ${this.isDesktop ? '<button type="button" class="ws-watermark-btn" id="wsWmOpenDir">打开文件夹…</button>' : ''}
+          ${this.isDesktop ? T('<button type="button" class="ws-watermark-btn" id="wsWmOpenDir">打开文件夹…</button>') : ''}
         </div>
         <div class="ws-watermark-hint">${this.isDesktop
-          ? '在左侧文件树里单击文件即可打开，<kbd>Ctrl</kbd>+<kbd>S</kbd> 写回原文件'
-          : '拖入或打开本地文件即可开始；网页版的保存是下载一份副本'}</div>`;
+          ? T('在左侧文件树里单击文件即可打开，<kbd>Ctrl</kbd>+<kbd>S</kbd> 写回原文件')
+          : T('拖入或打开本地文件即可开始；网页版的保存是下载一份副本')}</div>`;
       mark.querySelector('.ws-watermark-icon').appendChild(makeIcon('doc', null, 'ws-svg-watermark'));
       mark.querySelector('#wsWmNew').onclick = () => this.newTab();
       mark.querySelector('#wsWmOpenFile').onclick = () => this.openFileDialog();
@@ -2064,7 +2071,7 @@
       hint.id = 'wsDropHint';
       hint.className = 'ws-drop-hint';
       hint.hidden = true;
-      hint.innerHTML = '<div class="ws-drop-hint-box">松开即可打开</div>';
+      hint.innerHTML = T('<div class="ws-drop-hint-box">松开即可打开</div>');
       pane.appendChild(hint);
     }
 
@@ -2124,7 +2131,7 @@
     async _openDroppedPaths(paths) {
       const list = paths.slice(0, MAX_DROP);
       if (paths.length > list.length) {
-        this._toast(`一次最多打开 ${MAX_DROP} 个，其余的已忽略`, 'info');
+        this._toast(T('一次最多打开 {a} 个，其余的已忽略', { a: MAX_DROP }), 'info');
       }
       let opened = 0;
       for (const path of list) {
@@ -2135,14 +2142,14 @@
         const isDir = kind === 'text' ? await this._isDirPath(path) : false;
         if (isDir) {
           const ok = !this.rootPath || await this.fs.confirm(
-            `把左侧的工作目录换成「${name}」吗？`,
-            { title: '打开文件夹', okLabel: '打开', cancelLabel: '取消' },
+            T('把左侧的工作目录换成「{a}」吗？', { a: name }),
+            { title: T('打开文件夹'), okLabel: T('打开'), cancelLabel: T('取消') },
           );
           if (ok) { await this.setRoot(path); opened += 1; }
           continue;
         }
         if (kind === 'binary') {
-          this._toast(`无法打开「${name}」：不是文本文件`, 'error');
+          this._toast(T('无法打开「{a}」：不是文本文件', { a: name }), 'error');
           continue;
         }
         await this.openPath(path);
@@ -2203,7 +2210,7 @@
         // The dot doubles as the close button, the way most editors do it.
         const close = document.createElement('button');
         close.className = 'ws-tab-close';
-        close.setAttribute('aria-label', '关闭');
+        close.setAttribute('aria-label', T('关闭'));
         close.textContent = d.dirty ? '●' : '×';
         close.onclick = (e) => { e.stopPropagation(); this.closeTab(i); };
         el.appendChild(close);
@@ -2225,7 +2232,7 @@
       if (!list.length) {
         const empty = document.createElement('div');
         empty.className = 'ws-empty';
-        empty.textContent = '暂无记录';
+        empty.textContent = T('暂无记录');
         host.appendChild(empty);
         return;
       }

@@ -30,6 +30,13 @@ const safeStorage = {
 (function (global) {
   'use strict';
 
+  // i18n：应用里是真正的翻译函数（src/i18n.js 先于本文件加载）；
+  // 单元测试（node 直接 require 本文件）里它退化成"原样返回 + 插值"。
+  const T = (global.LuoguI18n && global.LuoguI18n.t) || ((s, v) => (v
+    ? String(s).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(v, k) ? v[k] : m))
+    : s));
+
+
   class LuoguEditorApp {
     constructor() {
       const ParserClass = typeof LuoguParser !== 'undefined' ? LuoguParser : (global.LuoguParser || (typeof window !== 'undefined' ? window.LuoguParser : null));
@@ -43,12 +50,17 @@ const safeStorage = {
       }) : null;
       this.linter = LinterClass ? new LinterClass() : null;
       
-      this.docName = '洛谷题解_未命名.md';
+      this.docName = T('洛谷题解_未命名.md');
       // Scroll sync defaults to on; a stored '0' turns it off.
       this.scrollSyncEnabled = safeStorage.getItem('luogu_editor_scroll_sync') !== '0';
       // Typography lint display defaults to on; a stored '0' hides it.
       this.lintDisplayEnabled = safeStorage.getItem('luogu_editor_lint_display') !== '0';
       this.currentMode = 'split'; // 'split' | 'editor-only' | 'preview-only' | 'typora'
+      // 双栏比例（左侧百分比）。拖动一次就记住，下次打开还是这个分法。
+      this.splitRatio = (() => {
+        const raw = Number(safeStorage.getItem('luogu_editor_split_ratio'));
+        return Number.isFinite(raw) && raw >= 15 && raw <= 85 ? raw : 50;
+      })();
       this.typora = null;         // lazily constructed once the DOM is bound
       this.currentTheme = 'luogu';
       this.isSyncScrolling = false;
@@ -103,6 +115,9 @@ const safeStorage = {
       }
 
       this.setTheme(savedTheme);
+      // 语言：首次跟随系统，之后记住选择（见 LuoguI18n）。
+      LuoguI18n.init();
+      this._syncLangMenu();
       // Reflect the stored scroll-sync preference on the toolbar button.
       this.toggleScrollSync(this.scrollSyncEnabled);
       this.applyLintDisplay();
@@ -117,7 +132,7 @@ const safeStorage = {
         this.setContent(LuoguTemplates.demo, false);
       } else {
         this.resetCalloutToggles();
-        this.setContent('# 未命名标题\n\n在此开始编写洛谷 Markdown 内容……\n', false);
+        this.setContent(T('# 未命名标题\n\n在此开始编写洛谷 Markdown 内容……\n'), false);
       }
 
       // Tabs + folder tree, desktop only. mount() returns false in a browser, so the
@@ -272,7 +287,7 @@ const safeStorage = {
       // Doc name input
       if (this.docNameInput) {
         this.docNameInput.addEventListener('change', (e) => {
-          this.docName = e.target.value.trim() || '未命名.md';
+          this.docName = e.target.value.trim() || T('未命名.md');
           safeStorage.setItem('luogu_editor_doc_name', this.docName);
         });
       }
@@ -292,11 +307,11 @@ const safeStorage = {
         const TEXT_EXT = /\.(md|markdown|txt|text)$/i;
         const file = files[0];
         if (!TEXT_EXT.test(file.name)) {
-          this.showToast(`无法打开「${file.name}」：仅支持 .md / .markdown / .txt 文件`, 'error');
+          this.showToast(T('无法打开「{a}」：仅支持 .md / .markdown / .txt 文件', { a: file.name }), 'error');
           return;
         }
         if (files.length > 1) {
-          this.showToast(`已打开「${file.name}」，其余 ${files.length - 1} 个文件被忽略`, 'info');
+          this.showToast(T('已打开「{a}」，其余 {b} 个文件被忽略', { a: file.name, b: files.length - 1 }), 'info');
         }
         this.openLocalFile(file);
       });
@@ -363,19 +378,32 @@ const safeStorage = {
       const MIN_PANE_WIDTH = 200;
       let activePointerId = null;
 
+      // 两侧面板的 basis 用 calc 各扣掉半个分割条：这样三者之和恰好等于容器宽度，
+      // 分割条既不会被挤掉，也不会把内容顶出容器。
+      this.applySplitFlex = (mode) => {
+        if (mode !== 'split') {
+          editorPane.style.flex = '';
+          previewPane.style.flex = '';
+          return;
+        }
+        const left = this.splitRatio;
+        editorPane.style.flex = `0 0 calc(${left}% - 3px)`;
+        previewPane.style.flex = `0 0 calc(${100 - left}% - 3px)`;
+      };
+
       const onPointerMove = (e) => {
         const rect = workspace.getBoundingClientRect();
         const offsetX = e.clientX - rect.left;
         const totalWidth = rect.width;
         if (offsetX > MIN_PANE_WIDTH && (totalWidth - offsetX) > MIN_PANE_WIDTH) {
-          const leftPct = (offsetX / totalWidth) * 100;
-          editorPane.style.flex = `0 0 ${leftPct}%`;
-          previewPane.style.flex = `0 0 ${100 - leftPct}%`;
+          this.splitRatio = Math.round((offsetX / totalWidth) * 1000) / 10;
+          this.applySplitFlex('split');
         }
       };
 
       const endDrag = () => {
         if (activePointerId === null) return;
+        this._saveSplitRatio();
         try {
           resizer.releasePointerCapture(activePointerId);
         } catch (err) { /* pointer already released */ }
@@ -387,6 +415,9 @@ const safeStorage = {
         window.removeEventListener('pointerup', endDrag);
         window.removeEventListener('pointercancel', endDrag);
       };
+
+      // 启动时把上次的比例摆回去（比例本身只对双栏有意义）。
+      this.applySplitFlex(this.currentMode);
 
       resizer.addEventListener('pointerdown', (e) => {
         if (activePointerId !== null) return;
@@ -407,7 +438,7 @@ const safeStorage = {
       resizer.setAttribute('tabindex', '0');
       resizer.setAttribute('role', 'separator');
       resizer.setAttribute('aria-orientation', 'vertical');
-      resizer.setAttribute('aria-label', '调整编辑区与预览区宽度');
+      resizer.setAttribute('aria-label', T('调整编辑区与预览区宽度'));
       resizer.addEventListener('keydown', (e) => {
         if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
         e.preventDefault();
@@ -416,11 +447,45 @@ const safeStorage = {
         const delta = e.key === 'ArrowLeft' ? -32 : 32;
         const next = current + delta;
         if (next > MIN_PANE_WIDTH && (rect.width - next) > MIN_PANE_WIDTH) {
-          const leftPct = (next / rect.width) * 100;
-          editorPane.style.flex = `0 0 ${leftPct}%`;
-          previewPane.style.flex = `0 0 ${100 - leftPct}%`;
+          this.splitRatio = Math.round((next / rect.width) * 1000) / 10;
+          this.applySplitFlex('split');
+          this._saveSplitRatio();
         }
       });
+    }
+
+    /**
+     * 切换界面语言。除了静态文案（由 i18n 的 applyDom 负责），还有一批文案是
+     * 渲染时算出来的——标签页名、状态栏、面板标题、公式面板——所以切完要让它们重画。
+     */
+    setLanguage(next) {
+      const lang = LuoguI18n.setLang(next);
+      this._syncLangMenu();
+      // 重画动态文案：面板（标签页 / 状态栏 / 文件树菜单）、公式面板、排版问题面板。
+      if (this.workspace && this.workspace.render) this.workspace.render();
+      if (this.workspace && this.workspace._syncSettingsMenu) this.workspace._syncSettingsMenu();
+      if (typeof this.renderMathCheatsheet === 'function') this.renderMathCheatsheet();
+      if (typeof this.applyLintDisplay === 'function') this.applyLintDisplay();
+      if (typeof this.updateStatusBar === 'function') this.updateStatusBar();
+      this.showToast(lang === 'zh' ? '界面语言：简体中文' : 'Interface language: English', 'success');
+      return lang;
+    }
+
+    _syncLangMenu() {
+      const cur = LuoguI18n.currentSetting();
+      const marks = {
+        langZhItem: cur === 'zh',
+        langEnItem: cur === 'en',
+        langSystemItem: cur === 'system',
+      };
+      Object.keys(marks).forEach((id) => {
+        const el = document.querySelector(`#${id} > span`);
+        if (el) el.textContent = marks[id] ? '✅' : '⬜';
+      });
+    }
+
+    _saveSplitRatio() {
+      safeStorage.setItem('luogu_editor_split_ratio', String(this.splitRatio));
     }
 
     // Synchronize scrolling between editor and preview
@@ -529,7 +594,7 @@ const safeStorage = {
       if (btn) {
         btn.classList.toggle('active', this.scrollSyncEnabled);
         btn.setAttribute('aria-pressed', this.scrollSyncEnabled ? 'true' : 'false');
-        btn.title = `滚动同步：${this.scrollSyncEnabled ? '开' : '关'}`;
+        btn.title = T('滚动同步：{a}', { a: this.scrollSyncEnabled ? T('开') : T('关') });
       }
       // Turning it back on must close the gap that opened while it was off,
       // otherwise the two panes stay stranded until the next scroll event.
@@ -538,7 +603,7 @@ const safeStorage = {
         this.syncScroll('editor');
       }
       if (this.showToast) {
-        this.showToast(`滚动同步已${this.scrollSyncEnabled ? '开启' : '关闭'}`, 'info');
+        this.showToast(T('滚动同步已{a}', { a: this.scrollSyncEnabled ? T('开启') : T('关闭') }), 'info');
       }
       return this.scrollSyncEnabled;
     }
@@ -1434,7 +1499,7 @@ const safeStorage = {
 
       const statsEl = document.getElementById('docStatsText');
       if (statsEl) {
-        statsEl.innerText = `${lines} 行 | ${words} 字 | ${chars} 字符 | ${formulas} 公式 | 预估阅读 ${readTime} 分钟`;
+        statsEl.innerText = T('{a} 行 | {b} 字 | {c} 字符 | {d} 公式 | 预估阅读 {e} 分钟', { a: lines, b: words, c: chars, d: formulas, e: readTime });
       }
 
       // Check with linter.
@@ -1451,7 +1516,7 @@ const safeStorage = {
       const lintResult = this.linter.lint(text);
       if (scoreBadge) {
         scoreBadge.hidden = false;
-        scoreBadge.innerText = `排版评分: ${lintResult.score}分`;
+        scoreBadge.innerText = T('排版评分: {a}分', { a: lintResult.score });
         scoreBadge.className = `status-score-badge ${lintResult.score >= 90 ? 'status-score-good' : 'status-score-warn'}`;
       }
     }
@@ -1466,12 +1531,12 @@ const safeStorage = {
         // A failed write is the one case the user MUST know about — otherwise the
         // "已自动保存" label is an outright lie and the draft is lost on refresh.
         if (saveStatus) {
-          saveStatus.innerText = '⚠ 自动保存失败，请手动导出！';
+          saveStatus.innerText = T('⚠ 自动保存失败，请手动导出！');
           saveStatus.classList.add('save-failed');
         }
         if (!this._saveFailWarned) {
           this._saveFailWarned = true;
-          this.showToast('本地自动保存失败（存储空间不足或被浏览器禁用），请使用 Ctrl+S 手动保存文件！', 'error');
+          this.showToast(T('本地自动保存失败（存储空间不足或被浏览器禁用），请使用 Ctrl+S 手动保存文件！'), 'error');
         }
         return;
       }
@@ -1481,7 +1546,7 @@ const safeStorage = {
         saveStatus.classList.remove('save-failed');
         const now = new Date();
         const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-        saveStatus.innerText = `已自动保存 (${timeStr})`;
+        saveStatus.innerText = T('已自动保存 ({a})', { a: timeStr });
       }
     }
 
@@ -1552,7 +1617,7 @@ const safeStorage = {
       try {
         return new RegExp(body, caseSensitive ? 'gm' : 'gim');
       } catch (e) {
-        if (err) err.textContent = '正则无效：' + e.message;
+        if (err) err.textContent = T('正则无效：') + e.message;
         return null;
       }
     }
@@ -1676,7 +1741,7 @@ const safeStorage = {
       const btn = document.getElementById('replaceAllBtn');
       if (btn) {
         btn.classList.remove('is-armed');
-        btn.textContent = '全部';
+        btn.textContent = T('全部');
       }
     }
 
@@ -1726,10 +1791,10 @@ const safeStorage = {
         this._replaceAllArmed = true;
         if (btn) {
           btn.classList.add('is-armed');
-          btn.textContent = `确认替换 ${matches.length} 处？`;
+          btn.textContent = T('确认替换 {a} 处？', { a: matches.length });
         }
         if (this.showToast) {
-          this.showToast(`将替换 ${matches.length} 处，请再点一次确认`, 'info');
+          this.showToast(T('将替换 {a} 处，请再点一次确认', { a: matches.length }), 'info');
         }
         clearTimeout(this._replaceAllTimer);
         this._replaceAllTimer = setTimeout(() => this._disarmReplaceAll(), 4000);
@@ -1750,7 +1815,7 @@ const safeStorage = {
       this.setContent(out);
       this._findIndex = null;
       this.runFind();
-      if (this.showToast) this.showToast('已替换 ' + n + ' 处', 'success');
+      if (this.showToast) this.showToast(T('已替换 ') + n + T(' 处'), 'success');
     }
 
     /**
@@ -1797,7 +1862,7 @@ const safeStorage = {
       if (this.lintDisplayEnabled) this.updateStats(this.getContent());
 
       if (this.showToast) {
-        this.showToast(`排版问题显示已${this.lintDisplayEnabled ? '开启' : '关闭'}`, 'info');
+        this.showToast(T('排版问题显示已{a}', { a: this.lintDisplayEnabled ? T('开启') : T('关闭') }), 'info');
       }
       return this.lintDisplayEnabled;
     }
@@ -1812,8 +1877,8 @@ const safeStorage = {
       const themeLabel = document.getElementById('currentThemeLabel');
       if (themeLabel) {
         const labels = {
-          light: '亮色',
-          dark: '暗色'
+          light: T('亮色'),
+          dark: T('暗色')
         };
         themeLabel.innerText = labels[theme] || theme;
       }
@@ -1837,6 +1902,8 @@ const safeStorage = {
       workspace.classList.add(`mode-${mode}`);
 
       if (mode === 'typora' && this.typora) this.typora.enable();
+      // 只剩一栏时把拖动留下的内联宽度清掉，让这一栏铺满（CSS 里也有 !important 兜底）。
+      if (typeof this.applySplitFlex === 'function') this.applySplitFlex(mode);
 
       // Update button active states
       document.querySelectorAll('.view-mode-btn').forEach(btn => {
@@ -1880,18 +1947,18 @@ const safeStorage = {
     }
 
     // Quick Formatting Actions
-    insertBold() { this.wrapSelection('**', '**', '加粗文本'); }
-    insertItalic() { this.wrapSelection('*', '*', '斜体文本'); }
-    insertStrikethrough() { this.wrapSelection('~~', '~~', '删除线文本'); }
+    insertBold() { this.wrapSelection('**', '**', T('加粗文本')); }
+    insertItalic() { this.wrapSelection('*', '*', T('斜体文本')); }
+    insertStrikethrough() { this.wrapSelection('~~', '~~', T('删除线文本')); }
     insertInlineCode() { this.wrapSelection('`', '`', 'code'); }
-    insertQuote() { this.wrapSelection('\n> ', '\n', '引用内容'); }
+    insertQuote() { this.wrapSelection('\n> ', '\n', T('引用内容')); }
     insertHR() { this.insertAtCursor('\n\n---\n\n'); }
     insertMathInline() { this.wrapSelection('$', '$', 'x'); }
     insertMathBlock() { this.insertAtCursor('\n\n$$\n\\sum_{i=1}^n a_i = S_n\n$$\n\n'); }
 
     insertHeading(level) {
       const prefix = '#'.repeat(level) + ' ';
-      this.wrapSelection(`\n${prefix}`, '\n', `标题 ${level}`);
+      this.wrapSelection(`\n${prefix}`, '\n', T('标题 {a}', { a: level }));
     }
 
     // Raise (delta < 0) or lower (delta > 0) the heading level of the line the caret
@@ -1938,27 +2005,27 @@ const safeStorage = {
     }
 
     insertTaskList() {
-      this.insertAtCursor('\n- [ ] 未完成任务项\n- [x] 已完成任务项\n');
+      this.insertAtCursor(T('\n- [ ] 未完成任务项\n- [x] 已完成任务项\n'));
     }
 
     insertUnorderedList() {
-      this.insertAtCursor('\n- 列表项一\n- 列表项二\n- 列表项三\n');
+      this.insertAtCursor(T('\n- 列表项一\n- 列表项二\n- 列表项三\n'));
     }
 
     insertOrderedList() {
-      this.insertAtCursor('\n1. 列表项一\n2. 列表项二\n3. 列表项三\n');
+      this.insertAtCursor(T('\n1. 列表项一\n2. 列表项二\n3. 列表项三\n'));
     }
 
     // Insert Luogu Containers
     insertCallout(type, title, isOpen) {
       const openParam = isOpen ? '{open}' : '';
       const titleParam = title ? `[${title}]` : '';
-      this.insertAtCursor(`\n\n::::${type}${titleParam}${openParam}\n这里是${type}折叠框的内容。\n::::\n\n`);
+      this.insertAtCursor(T('\\n\\n::::{a}{b}{c}\\n这里是{d}折叠框的内容。\\n::::\\n\\n', { a: type, b: titleParam, c: openParam, d: type }));
     }
 
     insertEpigraph(author, content) {
       const authorParam = author ? `[——${author}]` : '';
-      this.insertAtCursor(`\n\n:::epigraph${authorParam}\n${content || '千里之行，始于足下。'}\n:::\n\n`);
+      this.insertAtCursor(T('\\n\\n:::epigraph{a}\\n{b}\\n:::\\n\\n', { a: authorParam, b: content || T('千里之行，始于足下。') }));
     }
 
     insertAlign(mode) {
@@ -1975,13 +2042,13 @@ const safeStorage = {
     }
 
     insertPageHeader() {
-      this.insertAtCursor('\n\n:::Header[页眉文字]\n\n');
+      this.insertAtCursor(T('\n\n:::Header[页眉文字]\n\n'));
     }
 
     insertPageFooter() {
       // Seeded with the page counters, since that is the main reason to want a
       // footer and the placeholders are not otherwise discoverable.
-      this.insertAtCursor('\n\n:::Footer[第 {page} 页 / 共 {pages} 页]\n\n');
+      this.insertAtCursor(T('\n\n:::Footer[第 {page} 页 / 共 {pages} 页]\n\n'));
     }
 
     insertBilibili(id) {
@@ -1994,10 +2061,10 @@ const safeStorage = {
         // 一个标签页都没有时模板该落在哪？先开一个，否则内容会挂在"没有打开的文件"
         // 状态下面，连保存都无处可去。
         if (this.workspace && !this.workspace.docs.length) this.workspace.newTab();
-        if (confirm('应用模板将覆盖当前编辑区内容，是否继续？')) {
+        if (confirm(T('应用模板将覆盖当前编辑区内容，是否继续？'))) {
           this.resetCalloutToggles();
           this.setContent(LuoguTemplates[key]);
-          this.showToast('模板应用成功！', 'success');
+          this.showToast(T('模板应用成功！'), 'success');
         }
       }
     }
@@ -2008,9 +2075,9 @@ const safeStorage = {
       const formatted = this.linter.formatSpacing(current);
       if (current !== formatted) {
         this.setContent(formatted);
-        this.showToast('已自动完成中英文与公式空格排版规范修复！', 'success');
+        this.showToast(T('已自动完成中英文与公式空格排版规范修复！'), 'success');
       } else {
-        this.showToast('排版格式已完全符合规范，无需调整！', 'info');
+        this.showToast(T('排版格式已完全符合规范，无需调整！'), 'info');
       }
     }
 
@@ -2055,12 +2122,12 @@ const safeStorage = {
 
       navigator.clipboard.writeText(fullCode).then(() => {
         const copyText = btn.querySelector('.copy-text');
-        if (copyText) copyText.innerText = '已复制!';
+        if (copyText) copyText.innerText = T('已复制!');
         setTimeout(() => {
-          if (copyText) copyText.innerText = '复制';
+          if (copyText) copyText.innerText = T('复制');
         }, 1800);
       }).catch(err => {
-        this.showToast('复制失败: ' + err.message, 'error');
+        this.showToast(T('复制失败: ') + err.message, 'error');
       });
     }
 
@@ -2277,7 +2344,7 @@ const safeStorage = {
     insertMathSymbol(code) {
       this.insertAtCursor(code);
       this.closeModal('mathModal');
-      this.showToast('已插入数学公式！', 'success');
+      this.showToast(T('已插入数学公式！'), 'success');
     }
 
     // Modal helpers
@@ -2327,7 +2394,7 @@ const safeStorage = {
           warning: 'background:#fef5e7; color:#d35400;',
           info: 'background:#ebf5fb; color:#2980b9;'
         };
-        const typeLabels = { error: '错误', warning: '警告', info: '建议' };
+        const typeLabels = { error: T('错误'), warning: T('警告'), info: T('建议') };
 
         html += `
           <div style="padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary);">
@@ -2384,8 +2451,8 @@ const safeStorage = {
               <input type="text" class="grid-cell-input" value="${escapeHtml(cell.text)}" onchange="LuoguEditor.updateTableCell(${r}, ${c}, this.value)" />
               ${!isHeader ? `
                 <div class="grid-cell-tools">
-                  <button type="button" class="btn-mini" onclick="LuoguEditor.updateTableCell(${r}, ${c}, '^')" title="向上合并 (^) ${r > 0 ? '' : '(不可用)'}">^</button>
-                  <button type="button" class="btn-mini" onclick="LuoguEditor.updateTableCell(${r}, ${c}, '<')" title="向左合并 (<) ${c > 0 ? '' : '(不可用)'}">&lt;</button>
+                  <button type="button" class="btn-mini" onclick="LuoguEditor.updateTableCell(${r}, ${c}, '^')" title="向上合并 (^) ${r > 0 ? '' : T('(不可用)')}">^</button>
+                  <button type="button" class="btn-mini" onclick="LuoguEditor.updateTableCell(${r}, ${c}, '<')" title="向左合并 (<) ${c > 0 ? '' : T('(不可用)')}">&lt;</button>
                 </div>
               ` : ''}
             </${tag}>
@@ -2409,7 +2476,7 @@ const safeStorage = {
       const r = this.tableGridData.length;
       const newRow = [];
       for (let c = 0; c < cols; c++) {
-        newRow.push({ text: `数据 ${r},${c + 1}` });
+        newRow.push({ text: T('数据 {a},{b}', { a: r, b: c + 1 }) });
       }
       this.tableGridData.push(newRow);
       this.renderTableBuilderGrid();
@@ -2448,7 +2515,7 @@ const safeStorage = {
 
       this.insertAtCursor('\n\n' + md + '\n');
       this.closeModal('tableModal');
-      this.showToast('表格已成功生成并插入！', 'success');
+      this.showToast(T('表格已成功生成并插入！'), 'success');
     }
 
     // File Operations
@@ -2457,13 +2524,13 @@ const safeStorage = {
       // "确定要新建文档吗"只会让人误以为要丢内容。
       if (this.workspace) return this.workspace.newTab();
 
-      if (confirm('确定要新建文档吗？未保存的内容可在历史记录中恢复。')) {
-        this.docName = '未命名_洛谷文章.md';
+      if (confirm(T('确定要新建文档吗？未保存的内容可在历史记录中恢复。'))) {
+        this.docName = T('未命名_洛谷文章.md');
         this._fileHandle = null;
         if (this.docNameInput) this.docNameInput.value = this.docName;
         this.resetCalloutToggles();
-        this.setContent('# 未命名标题\n\n在此开始编写洛谷 Markdown 内容……\n');
-        this.showToast('已新建文档！', 'info');
+        this.setContent(T('# 未命名标题\n\n在此开始编写洛谷 Markdown 内容……\n'));
+        this.showToast(T('已新建文档！'), 'info');
       }
     }
 
@@ -2481,7 +2548,7 @@ const safeStorage = {
         if (this.workspace) {
           this.workspace.adoptExternal({ name: file.name, content: text, path: file.path || null });
         }
-        this.showToast(`已成功打开文件: ${file.name}`, 'success');
+        this.showToast(T('已成功打开文件: {a}', { a: file.name }), 'success');
       };
       reader.readAsText(file);
     }
@@ -2497,7 +2564,7 @@ const safeStorage = {
         try {
           const [handle] = await window.showOpenFilePicker({
             types: [{
-              description: 'Markdown / 文本文档',
+              description: T('Markdown / 文本文档'),
               accept: { 'text/markdown': ['.md', '.markdown'], 'text/plain': ['.txt'] },
             }],
             multiple: false,
@@ -2560,7 +2627,7 @@ const safeStorage = {
             await writable.write(content);
             await writable.close();
             this.markSaved();
-            this.showToast(`已保存到「${this.docName}」`, 'success');
+            this.showToast(T('已保存到「{a}」', { a: this.docName }), 'success');
             return;
           }
         } catch (err) {
@@ -2574,7 +2641,7 @@ const safeStorage = {
         try {
           const handle = await window.showSaveFilePicker({
             suggestedName: fileName,
-            types: [{ description: 'Markdown 文档', accept: { 'text/markdown': ['.md', '.markdown'] } }],
+            types: [{ description: T('Markdown 文档'), accept: { 'text/markdown': ['.md', '.markdown'] } }],
           });
           const writable = await handle.createWritable();
           await writable.write(content);
@@ -2583,7 +2650,7 @@ const safeStorage = {
           this.docName = handle.name || fileName;
           if (this.docNameInput) this.docNameInput.value = this.docName;
           this.markSaved();
-          this.showToast(`已保存到「${this.docName}」`, 'success');
+          this.showToast(T('已保存到「{a}」', { a: this.docName }), 'success');
           return;
         } catch (err) {
           if (err && err.name === 'AbortError') return;   // user cancelled
@@ -2601,7 +2668,7 @@ const safeStorage = {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       this.markSaved();
-      this.showToast('文档已成功保存到本地！', 'success');
+      this.showToast(T('文档已成功保存到本地！'), 'success');
     }
 
     /** Note that the buffer matches what is on disk. */
@@ -2613,9 +2680,9 @@ const safeStorage = {
     copyLuoguMarkdown() {
       const content = this.getContent();
       navigator.clipboard.writeText(content).then(() => {
-        this.showToast('已复制洛谷标准 Markdown 源码，可直接粘贴到洛谷发布！', 'success');
+        this.showToast(T('已复制洛谷标准 Markdown 源码，可直接粘贴到洛谷发布！'), 'success');
       }).catch(err => {
-        this.showToast('复制失败: ' + err.message, 'error');
+        this.showToast(T('复制失败: ') + err.message, 'error');
       });
     }
 
@@ -3347,7 +3414,7 @@ const safeStorage = {
       navigator.clipboard.writeText(text).then(function() {
         var span = btn.querySelector('.copy-text') || btn;
         var oldText = span.innerText;
-        span.innerText = '✓ 已复制';
+        span.innerText = T('✓ 已复制');
         btn.style.borderColor = '#2ecc71';
         btn.style.color = '#2ecc71';
         setTimeout(function() {
@@ -3356,7 +3423,7 @@ const safeStorage = {
           btn.style.color = '';
         }, 1800);
       }).catch(function() {
-        showToast('复制失败，请手动选择复制');
+        showToast(T('复制失败，请手动选择复制'));
       });
     };
     window.LuoguEditor = window.LuoguEditor || {};
@@ -3367,9 +3434,9 @@ const safeStorage = {
       if (!rawEl) return;
       var md = rawEl.value || rawEl.textContent;
       navigator.clipboard.writeText(md).then(function() {
-        showToast('已复制 Markdown 源码！');
+        showToast(T('已复制 Markdown 源码！'));
       }).catch(function() {
-        showToast('复制失败，请手动复制');
+        showToast(T('复制失败，请手动复制'));
       });
     }
 
@@ -3402,12 +3469,12 @@ const safeStorage = {
         try {
           const handle = await window.showSaveFilePicker({
             suggestedName: fileName,
-            types: [{ description: 'HTML 文档', accept: { 'text/html': ['.html'] } }],
+            types: [{ description: T('HTML 文档'), accept: { 'text/html': ['.html'] } }],
           });
           const writable = await handle.createWritable();
           await writable.write(fullHtml);
           await writable.close();
-          this.showToast('已导出高颜值独立 HTML 文档！', 'success');
+          this.showToast(T('已导出高颜值独立 HTML 文档！'), 'success');
           return;
         } catch (err) {
           // AbortError = user cancelled the dialog: stop silently.
@@ -3424,7 +3491,7 @@ const safeStorage = {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      this.showToast('已导出高颜值独立 HTML 文档！', 'success');
+      this.showToast(T('已导出高颜值独立 HTML 文档！'), 'success');
     }
 
     // ---- Pagination ----------------------------------------------------------
@@ -3579,11 +3646,11 @@ const safeStorage = {
       const snap = (typeof window !== 'undefined') && window.snapdom;
       if (!el) return;
       if (!snap) {
-        this.showToast('图片导出组件未加载，请刷新后重试', 'error');
+        this.showToast(T('图片导出组件未加载，请刷新后重试'), 'error');
         return;
       }
       if (!this.getContent().trim()) {
-        this.showToast('文档为空，没有可导出的内容', 'info');
+        this.showToast(T('文档为空，没有可导出的内容'), 'info');
         return;
       }
 
@@ -3600,8 +3667,8 @@ const safeStorage = {
 
         const pieces = this._imagePieces(el, h0, maxPieceCss);
         this.showToast(pieces.length > 1
-          ? `正在生成 ${pieces.length} 张图，请稍候……`
-          : '正在生成长图，请稍候……', 'info');
+          ? T('正在生成 {a} 张图，请稍候……', { a: pieces.length })
+          : T('正在生成长图，请稍候……'), 'info');
         await new Promise((r) => setTimeout(r, 50));
 
         // One capture, many crops: re-capturing per piece would repeat all the
@@ -3609,7 +3676,7 @@ const safeStorage = {
         // reflowed in between.
         const capture = await snap(el, { backgroundColor: this._captureBg() });
         const meta = capture.meta || { contentX: 0, contentY: 0 };
-        const base = (this.docName || '洛谷题解').replace(/\.(md|markdown|txt)$/i, '');
+        const base = (this.docName || T('洛谷题解')).replace(/\.(md|markdown|txt)$/i, '');
 
         for (let i = 0; i < pieces.length; i++) {
           const pc = pieces[i];
@@ -3643,15 +3710,15 @@ const safeStorage = {
         if (pieces.length > 1) {
           this.showToast(
             `已导出 ${pieces.length} 张图（每张 ${scale.toFixed(2)}x 全分辨率${
-              pieces.some((x) => x.forced) ? '，其中含按长度自动切分的片段' : ''}）`,
+              pieces.some((x) => x.forced) ? T('，其中含按长度自动切分的片段') : ''}）`,
             'success');
         } else {
           this.showToast(
-            `长图已导出（${Math.round(w0 * scale)}×${Math.round(h0 * scale)}，${scale.toFixed(2)}x）`,
+            T('长图已导出（{a}×{b}，{c}x）', { a: Math.round(w0 * scale), b: Math.round(h0 * scale), c: scale.toFixed(2) }),
             'success');
         }
       } catch (err) {
-        this.showToast(`长图导出失败：${err && err.message ? err.message : err}`, 'error');
+        this.showToast(T('长图导出失败：{a}', { a: err && err.message ? err.message : err }), 'error');
       } finally {
         undo();
       }
@@ -3811,7 +3878,10 @@ const safeStorage = {
       // to opt out, so the output was identical in both themes.
       const theme = document.documentElement.getAttribute('data-theme') || 'light';
       const noi = mode === 'noi';
-      const wantDark = noi ? false : (mode ? mode === 'dark' : theme === 'dark');
+      // NOI 风格只多一个页眉页脚和 A4 版式，配色没有理由被钉死成浅色——暗色主题下
+      // 导出却拿到白底，正是用户报的那一条。要浅色就显式传 'light'。
+      const wantDark = mode === 'light' ? false
+        : (mode === 'dark' ? true : theme === 'dark');
       const root = document.documentElement;
       root.classList.remove('print-light', 'print-dark', 'print-noi');
       root.classList.add(wantDark ? 'print-dark' : 'print-light');
@@ -3830,7 +3900,7 @@ const safeStorage = {
           '@page { size: A4 portrait; margin: 22mm 18mm 20mm 18mm;'
           + (title ? ` @top-center { content: ${this._cssString(title)};`
             + ' font-size: 9pt; font-family: serif; }' : '')
-          + ' @bottom-center { content: "第 " counter(page) " 页 共 " counter(pages) " 页";'
+          + T(' @bottom-center { content: "第 " counter(page) " 页 共 " counter(pages) " 页";')
           + ' font-size: 9pt; font-family: serif; } }';
         document.head.appendChild(noiStyle);
       }

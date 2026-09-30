@@ -20,6 +20,12 @@
 (function (global) {
   'use strict';
 
+  // i18n：应用里是真正的翻译函数（src/i18n.js 先于本文件加载）；
+  // 单元测试（node 直接 require 本文件）里它退化成"原样返回 + 插值"。
+  const T = (global.LuoguI18n && global.LuoguI18n.t) || ((s, v) => (v
+    ? String(s).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(v, k) ? v[k] : m))
+    : s));
+
   // Blocks that own their source range and can therefore be edited in place.
   // Everything the parser emits at top level carries data-src-line, so this is really
   // a list of what we refuse to edit rather than what we accept.
@@ -262,7 +268,7 @@
             let last = range.end;
             if (last > range.start && /^\s*(`{3,}|~{3,})\s*$/.test(all[last] || '')) last -= 1;
             this.openPartial(block, { lines: [range.start + 1, last] },
-              { host: pre, variant: 'code', placeholder: '在此输入代码…' });
+              { host: pre, variant: 'code', placeholder: T('在此输入代码…') });
           } else {
             this.openPartial(block, { lines: [range.start, range.end] },
               { host: pre, variant: 'code' });
@@ -278,7 +284,7 @@
         const range = block && this.rangeOf(block, anchors);
         if (range) {
           this.openPartial(block, { lines: [range.start, range.end] },
-            { host: bili, variant: 'code', placeholder: '例如 ![标题](bilibili:BV1xx411c7XD)' });
+            { host: bili, variant: 'code', placeholder: T('例如 ![标题](bilibili:BV1xx411c7XD)') });
           return true;
         }
       }
@@ -362,7 +368,7 @@
           // well and collapse the box the moment you click its name to rename it.
           e.preventDefault();
           this.openPartial(details, spec, {
-            host: titleEl, variant: 'title', placeholder: '折叠框标题',
+            host: titleEl, variant: 'title', placeholder: T('折叠框标题'),
           });
           return true;
         }
@@ -699,10 +705,10 @@
 
       const cur = m[2].toLowerCase();
       const TYPES = [
-        { id: 'info', label: '提示', color: '#3498db' },
-        { id: 'success', label: '成功', color: '#2ecc71' },
-        { id: 'warning', label: '警告', color: '#f39c12' },
-        { id: 'error', label: '错误', color: '#e74c3c' },
+        { id: 'info', label: T('提示'), color: '#3498db' },
+        { id: 'success', label: T('成功'), color: '#2ecc71' },
+        { id: 'warning', label: T('警告'), color: '#f39c12' },
+        { id: 'error', label: T('错误'), color: '#e74c3c' },
       ];
       // align / epigraph are containers too, but they have no "type" to switch.
       if (!TYPES.some((t) => t.id === cur)) return;
@@ -727,9 +733,9 @@
 
       const cur = m[2].toLowerCase();
       const ALIGNS = [
-        { id: 'left', label: '居左', color: '#95a5a6' },
-        { id: 'center', label: '居中', color: '#3498db' },
-        { id: 'right', label: '居右', color: '#9b59b6' },
+        { id: 'left', label: T('居左'), color: '#95a5a6' },
+        { id: 'center', label: T('居中'), color: '#3498db' },
+        { id: 'right', label: T('居右'), color: '#9b59b6' },
       ];
       this.openChoiceMenu(badgeHost, ALIGNS, cur, (id) => this.setAlign(start, id),
         this.badgeRect(badgeHost));
@@ -870,7 +876,7 @@
       const ta = document.createElement('textarea');
       ta.className = 'typora-block-input';
       ta.value = '';
-      ta.placeholder = '在此输入 Markdown…';
+      ta.placeholder = T('在此输入 Markdown…');
       ta.spellcheck = false;
       wrapper.appendChild(ta);
 

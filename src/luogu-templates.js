@@ -5,9 +5,15 @@
 (function (global) {
   'use strict';
 
+  // i18n：应用里是真正的翻译函数（src/i18n.js 先于本文件加载）；
+  // 单元测试（node 直接 require 本文件）里它退化成"原样返回 + 插值"。
+  const T = (global.LuoguI18n && global.LuoguI18n.t) || ((s, v) => (v
+    ? String(s).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(v, k) ? v[k] : m))
+    : s));
+
   const LuoguTemplates = {
     // 1. 洛谷 Markdown 完整特性演示文档
-    demo: `# 洛谷 Markdown 格式与 KaTeX 公式全特性演示
+    demo: T(`# 洛谷 Markdown 格式与 KaTeX 公式全特性演示
 
 本文档演示了 [洛谷 Markdown 格式手册](https://help.luogu.com.cn/rules/academic/handbook/markdown) 与 [LaTeX 格式手册](https://help.luogu.com.cn/rules/academic/handbook/latex) 中的全部特性。
 
@@ -202,10 +208,10 @@ $\\displaystyle \\sum_{k=1}^n k = \\frac{n(n+1)}{2}$
 支持使用图片语法直接嵌入 B 站视频播放器：
 
 ![](bilibili:BV1GJ411x7h7)
-`,
+`),
 
     // 2. 洛谷题解标准模板
-    solution: `# 题解：[题目编号] [题目名称]
+    solution: T(`# 题解：[题目编号] [题目名称]
 
 ## 题目大意
 简要概述题目的输入输出与核心要求（注意数学变量使用 \`$ ... $\` 包裹）。
@@ -312,10 +318,10 @@ int main() {
 1. 注意整数溢出问题，公式中的平方项可能超过 \`int\` 范围，需使用 \`long long\`。
 2. 斜率比较时注意分母为 0 的边界情况。
 ::::
-`,
+`),
 
     // 3. 洛谷题目题面模板
-    problem: `# [题目名称]
+    problem: T(`# [题目名称]
 
 ## 题目背景
 （可留空或编写生动的背景故事）
@@ -373,10 +379,10 @@ int main() {
 | $9 \\sim 10$ | $10^5$ | $5 \\times 10^5$ | $\\ge -10^3$ | 无负环 |
 
 对于 $100\\%$ 的数据，保证 $1 \\le n \\le 10^5$，$1 \\le m \\le 5 \\times 10^5$，$1 \\le s, t \\le n$，$|w| \\le 10^9$。
-`,
+`),
 
     // 4. 洛谷学术/文章模板
-    article: `# 深入浅出算法系列：浅谈 [算法主题]
+    article: T(`# 深入浅出算法系列：浅谈 [算法主题]
 
 :::epigraph[—— 洛谷学术专栏]
 千里之行，始于足下；算法之美，贵在探究。
@@ -421,14 +427,14 @@ $$
 
 ## 4. 总结与延伸思考
 通过上述推导，我们不仅掌握了算法的核心思想，更能触类旁通，解决更广泛的拓展问题。
-`,
+`),
 
     // A statement booklet laid out the way CCF publishes them, meant to be read
     // through 「导出 → 打印 / 导出 PDF（NOI 风格）」: the cover table, the per-problem
     // running heads, the page breaks and the tuack 数据范围 table are all exercised.
     // Problem metadata follows CSP-J 2025 第二轮 (2025-11-01); the statements are
     // abridged for template use.
-    cspj2025: `:::Header[CSP-J 2025 第二轮认证 入门级]
+    cspj2025: T(`:::Header[CSP-J 2025 第二轮认证 入门级]
 :::Footer[第 {page} 页 共 {pages} 页]
 
 :::align{center}
@@ -617,7 +623,7 @@ CSP-J 2025 第二轮正在进行。小 R 所在的考场共有 $n \\times m$ 名
 :::info[出题人提示]
 本题是纯模拟，关键在于把「排名」正确映射到蛇形座位：列号为 $\\lfloor (rank-1)/n \\rfloor + 1$，行号再按列的奇偶决定正数还是倒数。
 :::
-`
+`)
   };
 
   global.LuoguTemplates = LuoguTemplates;

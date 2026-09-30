@@ -158,6 +158,12 @@ jobs:
       - name: Pagination suite
         run: node test-browser/pagination.test.js
 
+      # Layout and print colour: the splitter must survive a drag (flex-shrink used to
+      # collapse it to 0px), single-pane modes must fill the window, NOI-style export
+      # must follow the theme, and the Typora cell editor must not be hard-coded white.
+      - name: Layout and print suite
+        run: node test-browser/layout-print.test.js
+
       # The workspace panel is desktop-only but ships in the same HTML, so this
       # guards both that it stays invisible in a browser and that it works when a
       # native filesystem is present (stubbed here — no Rust toolchain needed).

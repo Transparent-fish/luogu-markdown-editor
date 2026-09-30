@@ -5,53 +5,59 @@
 (function (global) {
   'use strict';
 
+  // i18n：应用里是真正的翻译函数（src/i18n.js 先于本文件加载）；
+  // 单元测试（node 直接 require 本文件）里它退化成"原样返回 + 插值"。
+  const T = (global.LuoguI18n && global.LuoguI18n.t) || ((s, v) => (v
+    ? String(s).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(v, k) ? v[k] : m))
+    : s));
+
   const LuoguMathLibrary = [
     {
-      category: '常用与基础 (Common)',
+      category: T('常用与基础 (Common)'),
       items: [
-        { label: '行内变量 $x$', code: '$x$', desc: '普通行内数学符号' },
-        { label: '上标 (幂) $x^2$', code: 'x^{2}', desc: '上标' },
-        { label: '下标 (角标) $a_i$', code: 'a_{i}', desc: '下标' },
-        { label: '上标与下标 $x_i^2$', code: 'x_{i}^{2}', desc: '同时包含角标与幂' },
-        { label: '分数 \\frac{a}{b}', code: '\\frac{a}{b}', desc: '标准分数' },
-        { label: '大型分数 \\displaystyle', code: '\\displaystyle\\frac{a}{b}', desc: '显示模式大分数' },
-        { label: '开平方根 \\sqrt{x}', code: '\\sqrt{x}', desc: '平方根' },
-        { label: '开 n 次方根 \\sqrt[n]{x}', code: '\\sqrt[n]{x}', desc: 'n 次方根' },
-        { label: '时间复杂度 O(n log n)', code: '\\mathcal{O}(n \\log n)', desc: '算法大 O 表示法' },
-        { label: '行间独立公式 $$...$$', code: '$$\n\\sum_{i=1}^n i = \\frac{n(n+1)}{2}\n$$', desc: '单独成行居中公式', isWide: true }
+        { label: T('行内变量 $x$'), code: '$x$', desc: T('普通行内数学符号') },
+        { label: T('上标 (幂) $x^2$'), code: 'x^{2}', desc: T('上标') },
+        { label: T('下标 (角标) $a_i$'), code: 'a_{i}', desc: T('下标') },
+        { label: T('上标与下标 $x_i^2$'), code: 'x_{i}^{2}', desc: T('同时包含角标与幂') },
+        { label: T('分数 \\frac{a}{b}'), code: '\\frac{a}{b}', desc: T('标准分数') },
+        { label: T('大型分数 \\displaystyle'), code: '\\displaystyle\\frac{a}{b}', desc: T('显示模式大分数') },
+        { label: T('开平方根 \\sqrt{x}'), code: '\\sqrt{x}', desc: T('平方根') },
+        { label: T('开 n 次方根 \\sqrt[n]{x}'), code: '\\sqrt[n]{x}', desc: T('n 次方根') },
+        { label: T('时间复杂度 O(n log n)'), code: '\\mathcal{O}(n \\log n)', desc: T('算法大 O 表示法') },
+        { label: T('行间独立公式 $$...$$'), code: '$$\n\\sum_{i=1}^n i = \\frac{n(n+1)}{2}\n$$', desc: T('单独成行居中公式'), isWide: true }
       ]
     },
     {
-      category: '关系符与运算符 (Operators)',
+      category: T('关系符与运算符 (Operators)'),
       items: [
-        { label: '小于等于 ≤', code: '\\le', desc: '小于等于' },
-        { label: '大于等于 ≥', code: '\\ge', desc: '大于等于' },
-        { label: '不等于 ≠', code: '\\ne', desc: '不等于' },
-        { label: '恒等于 ≡', code: '\\equiv', desc: '同余 / 恒等于' },
-        { label: '约等于 ≈', code: '\\approx', desc: '近似约等于' },
-        { label: '乘号 ×', code: '\\times', desc: '乘法符号' },
-        { label: '点乘 ·', code: '\\cdot', desc: '点乘' },
-        { label: '除号 ÷', code: '\\div', desc: '除法' },
-        { label: '正负号 ±', code: '\\pm', desc: '正负号' },
-        { label: '负正号 ∓', code: '\\mp', desc: '负正号' },
-        { label: '取模 bmod', code: '\\bmod', desc: '取模' },
-        { label: '异或 ⊕', code: '\\oplus', desc: '按位异或' },
-        { label: '同或 ⊗', code: '\\otimes', desc: '张量积/同或' },
-        { label: '逻辑与 ∧', code: '\\land', desc: '逻辑与' },
-        { label: '逻辑或 ∨', code: '\\lor', desc: '逻辑或' },
-        { label: '属于 ∈', code: '\\in', desc: '集合属于' },
-        { label: '不属于 ∉', code: '\\notin', desc: '不属于' },
-        { label: '包含于 ⊆', code: '\\subseteq', desc: '子集' },
-        { label: '真子集 ⊂', code: '\\subset', desc: '真子集' },
-        { label: '交集 ∩', code: '\\cap', desc: '交集' },
-        { label: '并集 ∪', code: '\\cup', desc: '并集' },
-        { label: '垂直 ⊥', code: '\\perp', desc: '垂直' },
-        { label: '平行 ∥', code: '\\parallel', desc: '平行' },
-        { label: '整除 |', code: '\\mid', desc: '整除' }
+        { label: T('小于等于 ≤'), code: '\\le', desc: T('小于等于') },
+        { label: T('大于等于 ≥'), code: '\\ge', desc: T('大于等于') },
+        { label: T('不等于 ≠'), code: '\\ne', desc: T('不等于') },
+        { label: T('恒等于 ≡'), code: '\\equiv', desc: T('同余 / 恒等于') },
+        { label: T('约等于 ≈'), code: '\\approx', desc: T('近似约等于') },
+        { label: T('乘号 ×'), code: '\\times', desc: T('乘法符号') },
+        { label: T('点乘 ·'), code: '\\cdot', desc: T('点乘') },
+        { label: T('除号 ÷'), code: '\\div', desc: T('除法') },
+        { label: T('正负号 ±'), code: '\\pm', desc: T('正负号') },
+        { label: T('负正号 ∓'), code: '\\mp', desc: T('负正号') },
+        { label: T('取模 bmod'), code: '\\bmod', desc: T('取模') },
+        { label: T('异或 ⊕'), code: '\\oplus', desc: T('按位异或') },
+        { label: T('同或 ⊗'), code: '\\otimes', desc: T('张量积/同或') },
+        { label: T('逻辑与 ∧'), code: '\\land', desc: T('逻辑与') },
+        { label: T('逻辑或 ∨'), code: '\\lor', desc: T('逻辑或') },
+        { label: T('属于 ∈'), code: '\\in', desc: T('集合属于') },
+        { label: T('不属于 ∉'), code: '\\notin', desc: T('不属于') },
+        { label: T('包含于 ⊆'), code: '\\subseteq', desc: T('子集') },
+        { label: T('真子集 ⊂'), code: '\\subset', desc: T('真子集') },
+        { label: T('交集 ∩'), code: '\\cap', desc: T('交集') },
+        { label: T('并集 ∪'), code: '\\cup', desc: T('并集') },
+        { label: T('垂直 ⊥'), code: '\\perp', desc: T('垂直') },
+        { label: T('平行 ∥'), code: '\\parallel', desc: T('平行') },
+        { label: T('整除 |'), code: '\\mid', desc: T('整除') }
       ]
     },
     {
-      category: '希腊字母 (Greek Letters)',
+      category: T('希腊字母 (Greek Letters)'),
       items: [
         { label: 'α (alpha)', code: '\\alpha', desc: 'alpha' },
         { label: 'β (beta)', code: '\\beta', desc: 'beta' },
@@ -69,76 +75,76 @@
         { label: 'τ (tau)', code: '\\tau', desc: 'tau' },
         { label: 'φ (varphi)', code: '\\varphi', desc: 'varphi' },
         { label: 'ω (omega)', code: '\\omega', desc: 'omega' },
-        { label: 'Δ (Delta)', code: '\\Delta', desc: '大写 Delta' },
-        { label: 'Θ (Theta)', code: '\\Theta', desc: '大写 Theta' },
-        { label: 'Λ (Lambda)', code: '\\Lambda', desc: '大写 Lambda' },
-        { label: 'Σ (Sigma)', code: '\\Sigma', desc: '大写 Sigma' },
-        { label: 'Φ (Phi)', code: '\\Phi', desc: '大写 Phi' },
-        { label: 'Ω (Omega)', code: '\\Omega', desc: '大写 Omega' }
+        { label: 'Δ (Delta)', code: '\\Delta', desc: T('大写 Delta') },
+        { label: 'Θ (Theta)', code: '\\Theta', desc: T('大写 Theta') },
+        { label: 'Λ (Lambda)', code: '\\Lambda', desc: T('大写 Lambda') },
+        { label: 'Σ (Sigma)', code: '\\Sigma', desc: T('大写 Sigma') },
+        { label: 'Φ (Phi)', code: '\\Phi', desc: T('大写 Phi') },
+        { label: 'Ω (Omega)', code: '\\Omega', desc: T('大写 Omega') }
       ]
     },
     {
-      category: '求和、乘积与微积分 (Sum & Calculus)',
+      category: T('求和、乘积与微积分 (Sum & Calculus)'),
       items: [
-        { label: '求和 ∑', code: '\\sum_{i=1}^{n}', desc: '求和符号' },
-        { label: '连乘 ∏', code: '\\prod_{i=1}^{n}', desc: '连乘符号' },
-        { label: '极限 lim', code: '\\lim_{x \\to \\infty}', desc: '极限' },
-        { label: '定积分 ∫', code: '\\int_{a}^{b} f(x) \\mathrm{d}x', desc: '定积分' },
-        { label: '不定积分 ∫', code: '\\int f(x) \\mathrm{d}x', desc: '不定积分' },
-        { label: '二重积分 ∬', code: '\\iint_D f(x,y) \\mathrm{d}x \\mathrm{d}y', desc: '二重积分' },
-        { label: '偏导数 ∂', code: '\\frac{\\partial y}{\\partial x}', desc: '偏导数' },
-        { label: '无穷大 ∞', code: '\\infty', desc: '无穷大' },
-        { label: '趋近于 →', code: '\\to', desc: '趋近于' }
+        { label: T('求和 ∑'), code: '\\sum_{i=1}^{n}', desc: T('求和符号') },
+        { label: T('连乘 ∏'), code: '\\prod_{i=1}^{n}', desc: T('连乘符号') },
+        { label: T('极限 lim'), code: '\\lim_{x \\to \\infty}', desc: T('极限') },
+        { label: T('定积分 ∫'), code: '\\int_{a}^{b} f(x) \\mathrm{d}x', desc: T('定积分') },
+        { label: T('不定积分 ∫'), code: '\\int f(x) \\mathrm{d}x', desc: T('不定积分') },
+        { label: T('二重积分 ∬'), code: '\\iint_D f(x,y) \\mathrm{d}x \\mathrm{d}y', desc: T('二重积分') },
+        { label: T('偏导数 ∂'), code: '\\frac{\\partial y}{\\partial x}', desc: T('偏导数') },
+        { label: T('无穷大 ∞'), code: '\\infty', desc: T('无穷大') },
+        { label: T('趋近于 →'), code: '\\to', desc: T('趋近于') }
       ]
     },
     {
-      category: '矩阵与多行方程 (Matrices & Cases)',
+      category: T('矩阵与多行方程 (Matrices & Cases)'),
       items: [
         {
-          label: '分段函数 cases',
+          label: T('分段函数 cases'),
           code: '$$\nf(x) = \\begin{cases}\n  2, & x > 0 \\\\\n  1, & x = 0 \\\\\n  0, & x < 0\n\\end{cases}\n$$',
-          desc: '分段函数',
+          desc: T('分段函数'),
           isWide: true
         },
         {
-          label: '圆括号矩阵 pmatrix (2x2)',
+          label: T('圆括号矩阵 pmatrix (2x2)'),
           code: '$$\n\\begin{pmatrix}\na & b \\\\\nc & d\n\\end{pmatrix}\n$$',
-          desc: '圆括号矩阵',
+          desc: T('圆括号矩阵'),
           isWide: true
         },
         {
-          label: '方括号矩阵 bmatrix (2x2)',
+          label: T('方括号矩阵 bmatrix (2x2)'),
           code: '$$\n\\begin{bmatrix}\n1 & 0 \\\\\n0 & 1\n\\end{bmatrix}\n$$',
-          desc: '方括号矩阵',
+          desc: T('方括号矩阵'),
           isWide: true
         },
         {
-          label: '多行公式对齐 aligned',
+          label: T('多行公式对齐 aligned'),
           code: '$$\n\\begin{aligned}\na + b &= c \\\\\n(x + y)^2 &= x^2 + 2xy + y^2\n\\end{aligned}\n$$',
-          desc: '多行等号对齐',
+          desc: T('多行等号对齐'),
           isWide: true
         }
       ]
     },
     {
-      category: '字体、字号与修饰 (Fonts & Styles)',
+      category: T('字体、字号与修饰 (Fonts & Styles)'),
       items: [
-        { label: '实数集 R', code: '\\mathbb{R}', desc: '实数集' },
-        { label: '整数集 Z', code: '\\mathbb{Z}', desc: '整数集' },
-        { label: '自然数集 N', code: '\\mathbb{N}', desc: '自然数集' },
-        { label: '复数集 C', code: '\\mathbb{C}', desc: '复数集' },
-        { label: '算法复杂度 O(n)', code: '\\mathcal{O}(n)', desc: '花体大 O' },
-        { label: '哥特体 g', code: '\\mathfrak{g}', desc: '哥特字体' },
-        { label: '手写花体 L', code: '\\mathscr{L}', desc: '手写花体' },
-        { label: '公式内正体中文', code: '\\text{满足条件 } x > 0', desc: '公式中文文本' },
-        { label: '加粗 \\mathbf', code: '\\mathbf{v}', desc: '向量加粗' },
-        { label: '向量箭头 \\vec', code: '\\vec{a}', desc: '向量箭头' },
-        { label: '上横线 \\overline', code: '\\overline{AB}', desc: '线段/平均值' },
-        { label: '洛谷蓝颜色', code: '{\\color{#3498db} x}', desc: '自定义颜色' },
-        { label: '红色字体', code: '{\\color{red} x}', desc: '红色' },
-        { label: '绿色通过颜色', code: '{\\color{#2ecc71} \\text{AC}}', desc: '绿色' },
-        { label: '特大字号 Huge', code: '{\\Huge x}', desc: 'Huge 字号' },
-        { label: '大字号 Large', code: '{\\Large x}', desc: 'Large 字号' }
+        { label: T('实数集 R'), code: '\\mathbb{R}', desc: T('实数集') },
+        { label: T('整数集 Z'), code: '\\mathbb{Z}', desc: T('整数集') },
+        { label: T('自然数集 N'), code: '\\mathbb{N}', desc: T('自然数集') },
+        { label: T('复数集 C'), code: '\\mathbb{C}', desc: T('复数集') },
+        { label: T('算法复杂度 O(n)'), code: '\\mathcal{O}(n)', desc: T('花体大 O') },
+        { label: T('哥特体 g'), code: '\\mathfrak{g}', desc: T('哥特字体') },
+        { label: T('手写花体 L'), code: '\\mathscr{L}', desc: T('手写花体') },
+        { label: T('公式内正体中文'), code: T('\\text{满足条件 } x > 0'), desc: T('公式中文文本') },
+        { label: T('加粗 \\mathbf'), code: '\\mathbf{v}', desc: T('向量加粗') },
+        { label: T('向量箭头 \\vec'), code: '\\vec{a}', desc: T('向量箭头') },
+        { label: T('上横线 \\overline'), code: '\\overline{AB}', desc: T('线段/平均值') },
+        { label: T('洛谷蓝颜色'), code: '{\\color{#3498db} x}', desc: T('自定义颜色') },
+        { label: T('红色字体'), code: '{\\color{red} x}', desc: T('红色') },
+        { label: T('绿色通过颜色'), code: '{\\color{#2ecc71} \\text{AC}}', desc: T('绿色') },
+        { label: T('特大字号 Huge'), code: '{\\Huge x}', desc: T('Huge 字号') },
+        { label: T('大字号 Large'), code: '{\\Large x}', desc: T('Large 字号') }
       ]
     }
   ];

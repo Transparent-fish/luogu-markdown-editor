@@ -490,8 +490,8 @@ const { chromium } = require('playwright');
     await p.waitForTimeout(300);
     bg = await badge();
     ck(bg.hidden && !bg.shown, '关闭后徽标隐藏', JSON.stringify(bg));
-    ck(await p.evaluate(() => document.getElementById('lintToggleMark').textContent === '⬜'),
-      '菜单勾选标记同步');
+    ck(await p.evaluate(() => document.getElementById('lintDisplayToggle').checked === false),
+      '设置弹窗里的开关同步');
     ck(await p.evaluate(() => localStorage.getItem('luogu_editor_lint_display') === '0'),
       '偏好写入 localStorage');
 

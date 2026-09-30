@@ -101,12 +101,21 @@ const path = require('path');
   ck((await text(SAVE_BTN)) === '保存', '切回中文后按钮回到「保存」', await text(SAVE_BTN));
   ck(CJK.test((await text('#docStatsText')) || ''), '状态栏回到中文', await text('#docStatsText'));
   ck(await p.evaluate(() => document.documentElement.lang) === 'zh-CN', 'html[lang] 回到 zh-CN');
-  const marks = await p.evaluate(() => ({
-    zh: document.querySelector('#langZhItem > span').textContent,
-    en: document.querySelector('#langEnItem > span').textContent,
-    sys: document.querySelector('#langSystemItem > span').textContent,
-  }));
-  ck(marks.zh === '✅' && marks.en === '⬜' && marks.sys === '⬜', '设置菜单的勾选状态正确', JSON.stringify(marks));
+  await p.evaluate(() => LuoguEditor.openSettings());
+  await p.waitForTimeout(200);
+  ck(await p.evaluate(() => document.getElementById('settingsLangSelect').value) === 'zh',
+    '设置里的语言下拉跟着当前语言（手动选的中文）');
+  ck(await p.evaluate(() => document.querySelector('#settingsModal .modal-title').textContent.trim()) === '⚙️ 设置',
+    '设置弹窗标题已切回中文');
+  await p.evaluate(() => LuoguEditor.setLanguage('en'));
+  await p.waitForTimeout(200);
+  ck(await p.evaluate(() => document.querySelector('#settingsModal .modal-title').textContent.trim()) === '⚙️ Settings',
+    '设置弹窗开着时切语言，标题也跟着变');
+  ck(await p.evaluate(() => document.getElementById('settingsLangSelect').value) === 'en',
+    '下拉框停在 English 上');
+  await p.evaluate(() => LuoguEditor.closeModal('settingsModal'));
+  await p.evaluate(() => LuoguEditor.setLanguage('zh'));
+  await p.waitForTimeout(150);
   ck(await p.evaluate(() => window.T('保存')) === '保存', 'window.T 在中文下原样返回');
 
   // ---- 手动选择要记住（file:// 下 localStorage 可能不可用，不可用就跳过这一段）----

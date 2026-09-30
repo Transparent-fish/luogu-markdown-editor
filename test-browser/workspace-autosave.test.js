@@ -203,9 +203,9 @@ const FAKE_FS = `
   // 关掉之后就不该再写
   await p.evaluate(() => LuoguEditor.workspace.setAutosaveToFile(false));
   ck(await p.evaluate(() => {
-    const m = document.getElementById('autoSaveMark');
-    return m && m.textContent === '⬜';
-  }), '设置菜单里的勾选同步变化');
+    const c = document.getElementById('autoSaveToggle');
+    return c && c.checked === false;
+  }), '设置弹窗里的开关同步变化');
   await p.evaluate(() => {
     const ta = document.getElementById('editorTextarea');
     ta.value = '# 项目说明\n\n这行不该被自动写盘。\n';
@@ -231,6 +231,56 @@ const FAKE_FS = `
     '没有路径的文档不会被自动保存（绝不偷偷弹另存为）');
   ck(await p.evaluate(() => !!document.querySelector('.ws-tab.is-dirty')),
     '没有路径的文档保持未保存状态');
+
+  // ---- 自动保存间隔：设置页里选的那一档，真的决定什么时候写盘 ----
+  ck(await p.evaluate(() => LuoguEditor.workspace.autosaveInterval) === 2500,
+    '自动保存间隔默认 2.5 秒');
+  await p.evaluate(() => LuoguEditor.workspace.openPath('/proj/notes.md'));
+  await p.waitForTimeout(400);
+  // 选 0.5 秒：停下来半秒就该落盘
+  await p.evaluate(() => {
+    LuoguEditor.openSettings();
+    const sel = document.getElementById('settingsAutosaveInterval');
+    sel.value = '500';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    LuoguEditor.closeModal('settingsModal');
+  });
+  await p.waitForTimeout(200);
+  ck(await p.evaluate(() => LuoguEditor.workspace.autosaveInterval) === 500, '选 0.5 秒后生效');
+  await p.evaluate(() => {
+    const ta = document.getElementById('editorTextarea');
+    ta.value = '# 笔记\n\n半秒就该写进去了。\n';
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await p.waitForTimeout(1400);
+  ck(await p.evaluate(() => window.__FAKE.files['/proj/notes.md'].includes('半秒就该写进去了')),
+    '间隔 0.5 秒：约 1 秒内就写回文件（默认 2.5 秒时这里还没写）');
+
+  // 选 10 秒：同样等 1.4 秒就不该写（否则说明下拉框没真的接到计时器上）
+  await p.evaluate(() => {
+    LuoguEditor.openSettings();
+    const sel = document.getElementById('settingsAutosaveInterval');
+    sel.value = '10000';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    LuoguEditor.closeModal('settingsModal');
+  });
+  await p.waitForTimeout(200);
+  ck(await p.evaluate(() => LuoguEditor.workspace.autosaveInterval) === 10000, '选 10 秒后生效');
+  await p.evaluate(() => {
+    const ta = document.getElementById('editorTextarea');
+    ta.value = '# 笔记\n\n十秒之后才该写进去。\n';
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await p.waitForTimeout(1400);
+  ck(await p.evaluate(() => !window.__FAKE.files['/proj/notes.md'].includes('十秒之后才该写进去')),
+    '间隔 10 秒：1.4 秒时还没写');
+  ck(await p.evaluate(() => !!document.querySelector('.ws-tab.is-dirty')), '此时标签页仍是未保存状态');
+  // 改小间隔要立刻重排计时器（用户多半就在等它保存）
+  await p.evaluate(() => LuoguEditor.workspace.setAutosaveInterval(500));
+  await p.waitForTimeout(1300);
+  ck(await p.evaluate(() => window.__FAKE.files['/proj/notes.md'].includes('十秒之后才该写进去')),
+    '把间隔改小后立刻重排计时器，不用再敲一个键');
+  await p.evaluate(() => LuoguEditor.workspace.setAutosaveInterval(2500));
 
   // ==========================================================================
   // 4. 保存时自动排版
@@ -324,10 +374,15 @@ const FAKE_FS = `
   // ==========================================================================
   // 6. 只有桌面版才看得到这两个设置项
   // ==========================================================================
+  await p.evaluate(() => LuoguEditor.openSettings());
+  await p.waitForTimeout(250);
   ck(await p.evaluate(() => {
-    const item = document.getElementById('autoSaveToggleItem');
-    return item && getComputedStyle(item).display !== 'none';
-  }), '桌面版：设置菜单里能看到"自动保存到文件"');
+    const section = document.querySelector('#settingsModal .settings-section.ws-desktop-only');
+    const rows = section.querySelectorAll('.settings-row');
+    return section.getClientRects().length > 0 && rows.length === 3
+      && [...rows].every((el) => el.getClientRects().length > 0);
+  }), '桌面版：设置里能看到那三项磁盘相关的设置');
+  await p.evaluate(() => LuoguEditor.closeModal('settingsModal'));
 
   const browser = await b.newPage({ viewport: { width: 1280, height: 800 } });
   await browser.goto(APP, { waitUntil: 'networkidle' });
@@ -335,10 +390,9 @@ const FAKE_FS = `
   // 每次导航后把语言钉回中文，用例只测行为、不测语言。
   await browser.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
   await browser.waitForTimeout(700);
-  ck(await browser.evaluate(() => {
-    const items = [...document.querySelectorAll('.dropdown-item.ws-desktop-only')];
-    return items.length === 2 && items.every((el) => getComputedStyle(el).display === 'none');
-  }), '网页版：这两个设置项不显示（那儿没有可写回的文件）');
+  ck(await browser.evaluate(() =>
+    document.querySelector('#settingsModal .settings-section.ws-desktop-only').getClientRects().length === 0),
+    '网页版：磁盘相关的那一整节不显示（那儿没有可写回的文件）');
   await browser.close();
 
   ck(errs.length === 0, '全程无 JS 报错', errs.slice(0, 3).join(' | '));

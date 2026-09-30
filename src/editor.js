@@ -117,7 +117,7 @@ const safeStorage = {
       this.setTheme(savedTheme);
       // 语言：首次跟随系统，之后记住选择（见 LuoguI18n）。
       LuoguI18n.init();
-      this._syncLangMenu();
+      this._syncSettingsModal();
       // Reflect the stored scroll-sync preference on the toolbar button.
       this.toggleScrollSync(this.scrollSyncEnabled);
       this.applyLintDisplay();
@@ -189,6 +189,17 @@ const safeStorage = {
     }
 
     bindEvents() {
+      // 设置页按 Esc 关掉。别的弹窗没这个待遇：它们大多是"再点一下就去做事"的插入
+      // 面板，而设置页是用户会停留、改完就想走的地方。
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const modal = document.getElementById('settingsModal');
+        if (modal && modal.classList.contains('active')) {
+          e.preventDefault();
+          this.closeModal('settingsModal');
+        }
+      });
+
       // Textarea input
       // Scale the debounce with document size. A flat 120 ms means a very large
       // document re-renders while the user is still mid-word; giving big documents a
@@ -460,7 +471,7 @@ const safeStorage = {
      */
     setLanguage(next) {
       const lang = LuoguI18n.setLang(next);
-      this._syncLangMenu();
+      this._syncSettingsModal();
       // 重画动态文案：面板（标签页 / 状态栏 / 文件树菜单）、公式面板、排版问题面板。
       if (this.workspace && this.workspace.render) this.workspace.render();
       if (this.workspace && this.workspace._syncSettingsMenu) this.workspace._syncSettingsMenu();
@@ -471,17 +482,30 @@ const safeStorage = {
       return lang;
     }
 
-    _syncLangMenu() {
-      const cur = LuoguI18n.currentSetting();
-      const marks = {
-        langZhItem: cur === 'zh',
-        langEnItem: cur === 'en',
-        langSystemItem: cur === 'system',
-      };
-      Object.keys(marks).forEach((id) => {
-        const el = document.querySelector(`#${id} > span`);
-        if (el) el.textContent = marks[id] ? '✅' : '⬜';
-      });
+    /**
+     * 把当前设置同步到设置弹窗里的控件。
+     *
+     * 设置页里的控件是"显示状态"的一方，不是"保存状态"的一方：所有状态都存在各自的
+     * 模块里（编辑器 / 工作区 / i18n），这里只负责把它们画到界面上。这样从别处改动
+     * （快捷键、状态栏按钮、程序恢复）也会反映过来。
+     */
+    _syncSettingsModal() {
+      const theme = document.getElementById('settingsThemeSelect');
+      if (theme) theme.value = this.currentTheme === 'dark' ? 'dark' : 'light';
+
+      const lang = document.getElementById('settingsLangSelect');
+      if (lang) lang.value = LuoguI18n.currentSetting();
+
+      const lint = document.getElementById('lintDisplayToggle');
+      if (lint) lint.checked = !!this.lintDisplayEnabled;
+
+      if (this.workspace && this.workspace._syncSettingsMenu) this.workspace._syncSettingsMenu();
+    }
+
+    /** 齿轮：先同步控件状态，再打开。 */
+    openSettings() {
+      this._syncSettingsModal();
+      this.openModal('settingsModal');
     }
 
     _saveSplitRatio() {
@@ -1846,10 +1870,8 @@ const safeStorage = {
       this.lintDisplayEnabled = (force === undefined) ? !this.lintDisplayEnabled : !!force;
       safeStorage.setItem('luogu_editor_lint_display', this.lintDisplayEnabled ? '1' : '0');
 
-      const mark = document.getElementById('lintToggleMark');
-      if (mark) mark.textContent = this.lintDisplayEnabled ? '✅' : '⬜';
-      const item = document.getElementById('lintToggleItem');
-      if (item) item.setAttribute('aria-pressed', this.lintDisplayEnabled ? 'true' : 'false');
+      const item = document.getElementById('lintDisplayToggle');
+      if (item) item.checked = this.lintDisplayEnabled;
 
       const badge = document.getElementById('linterScoreBadge');
       if (badge) badge.hidden = !this.lintDisplayEnabled;
@@ -1874,6 +1896,9 @@ const safeStorage = {
       document.documentElement.setAttribute('data-theme', theme);
       safeStorage.setItem('luogu_editor_theme', theme);
       
+      const select = document.getElementById('settingsThemeSelect');
+      if (select) select.value = theme === 'dark' ? 'dark' : 'light';
+
       const themeLabel = document.getElementById('currentThemeLabel');
       if (themeLabel) {
         const labels = {

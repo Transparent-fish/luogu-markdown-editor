@@ -1780,6 +1780,90 @@ code[class*="language-"] {
   flex-shrink: 0;
 }
 
+/* 设置弹窗：一行一个设置项，左边是名字、右边是控件。
+   用 grid 而不是 flex 是为了让所有行的控件左边缘对齐 —— 名字长短不一时，
+   右对齐的控件列看起来才不晃。 */
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.settings-section + .settings-section {
+  padding-top: 18px;
+  border-top: 1px solid var(--border-color);
+}
+
+.settings-section-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--luogu-blue);
+  text-transform: uppercase;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px 16px;
+  padding: 7px 0;
+  font-size: 13px;
+}
+
+.settings-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-control {
+  justify-self: end;
+  width: auto;
+  min-width: 190px;
+  max-width: 260px;
+}
+
+/* 开关那一列：勾选框在上、说明在下；说明跟着勾选框走，不然一行里两段文字会
+   在垂直方向错开，看起来像两个设置项。 */
+.settings-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  justify-self: end;
+  max-width: 380px;
+}
+
+.settings-switch input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--luogu-blue);
+  cursor: pointer;
+}
+
+.settings-switch .settings-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+/* 窄屏上把两列叠起来，否则 160px 的名字列会把控件挤到看不见。 */
+@media (max-width: 560px) {
+  .settings-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .settings-control,
+  .settings-switch {
+    justify-self: stretch;
+    max-width: none;
+  }
+}
+
 /* Form Controls in Modal */
 .form-group {
   margin-bottom: 16px;
@@ -3444,8 +3528,12 @@ body.ws-resizing * { cursor: col-resize !important; }
 /* 只在桌面版出现的控件：写回磁盘、自动保存、保存时排版。网页版现在也有标签页
    （has-workspace 对它同样成立），但这些功能在那儿没有依据，所以按 ws-desktop 判。 */
 .ws-desktop-only { display: none !important; }
+/* 每种宿主元素要显式写回它自己的 display —— 用 revert 会退到浏览器默认值，
+   网格行的两列布局就没了。 */
 html.ws-desktop .dropdown-item.ws-desktop-only { display: flex !important; }
 html.ws-desktop .status-item.ws-desktop-only { display: flex !important; }
+html.ws-desktop .settings-row.ws-desktop-only { display: grid !important; }
+html.ws-desktop .settings-section.ws-desktop-only { display: block !important; }
 
 /* "是否保存更改？" 三选一对話框：保存 / 不保存 / 取消。
    宿主自带的 confirm 只有两个按钮，缺的正是最常用的那个"保存"。 */

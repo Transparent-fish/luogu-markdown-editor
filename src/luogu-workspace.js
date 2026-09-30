@@ -28,7 +28,11 @@
 
   const MAX_RECENT = 12;
   // 打字停下来多久之后写盘。太短会在连续输入时反复写，太长又失去"自动"的意义。
-  const AUTOSAVE_IDLE_MS = 2500;
+  // 2.5 秒是默认值，用户可以在设置里改（见 setAutosaveInterval）；白名单之外的值
+  // 一律回落到默认，免得 localStorage 里一个手改的数字把写盘节奏变成 0ms。
+  const AUTOSAVE_IDLE_DEFAULT = 2500;
+  const AUTOSAVE_IDLE_CHOICES = [500, 1000, 2500, 5000, 10000];
+  const AUTOSAVE_INTERVAL_KEY = 'luogu_workspace_autosave_interval';
   const AUTOSAVE_KEY = 'luogu_workspace_autosave';
   const FORMAT_ON_SAVE_KEY = 'luogu_workspace_format_on_save';
   const COLLAPSED_KEY = 'luogu_workspace_collapsed';
@@ -288,6 +292,7 @@
       this._autosaveTimer = null;
       // 两个开关默认打开：都是"不用操心"的功能，随时可以在设置里关掉。
       this.autosaveToFile = this._readFlag(AUTOSAVE_KEY, true);
+      this.autosaveInterval = this._readAutosaveInterval();
       this.formatOnSave = this._readFlag(FORMAT_ON_SAVE_KEY, true);
       // 'desktop' 有原生文件系统（文件树、写回、自动保存）；'web' 只有标签页。
       this.mode = this.fs ? 'desktop' : 'web';
@@ -315,6 +320,30 @@
       try { global.localStorage && global.localStorage.setItem(key, on ? '1' : '0'); } catch (e) { /* 记不住不影响使用 */ }
     }
 
+    /** 只认下拉框里列出的那几档；其余（被手改过 / 旧版本残留）回落到默认。 */
+    _readAutosaveInterval() {
+      try {
+        const raw = Number(global.localStorage && global.localStorage.getItem(AUTOSAVE_INTERVAL_KEY));
+        return AUTOSAVE_IDLE_CHOICES.includes(raw) ? raw : AUTOSAVE_IDLE_DEFAULT;
+      } catch (e) { return AUTOSAVE_IDLE_DEFAULT; }
+    }
+
+    /**
+     * 设置"停下来多久之后写盘"。
+     *
+     * 改小之后要重新排一次计时器：用户多半是在"刚打完一段、等它保存"的时候来改这个
+     * 值的，如果非要等下一次输入才生效，看起来就像没生效。
+     */
+    setAutosaveInterval(ms) {
+      const next = AUTOSAVE_IDLE_CHOICES.includes(Number(ms)) ? Number(ms) : AUTOSAVE_IDLE_DEFAULT;
+      this.autosaveInterval = next;
+      try { global.localStorage && global.localStorage.setItem(AUTOSAVE_INTERVAL_KEY, String(next)); } catch (e) { /* 记不住不影响使用 */ }
+      this._syncSettingsMenu();
+      this._toast(T('自动保存间隔：{a} 秒', { a: (next / 1000).toFixed(next % 1000 === 0 ? 0 : 1) }), 'info');
+      this._scheduleAutoSave();
+      return next;
+    }
+
     setAutosaveToFile(on) {
       this.autosaveToFile = !!on;
       this._writeFlag(AUTOSAVE_KEY, this.autosaveToFile);
@@ -332,12 +361,14 @@
       return this.formatOnSave;
     }
 
-    /** 设置菜单里的勾选状态（菜单项由 index.html 提供，浏览器下是隐藏的）。 */
+    /** 把工作区自己的状态画到设置弹窗里的控件上（控件在 index.html，网页版下隐藏）。 */
     _syncSettingsMenu() {
-      const a = document.getElementById('autoSaveMark');
-      const f = document.getElementById('formatOnSaveMark');
-      if (a) a.textContent = this.autosaveToFile ? '✅' : '⬜';
-      if (f) f.textContent = this.formatOnSave ? '✅' : '⬜';
+      const a = document.getElementById('autoSaveToggle');
+      if (a) a.checked = !!this.autosaveToFile;
+      const i = document.getElementById('settingsAutosaveInterval');
+      if (i) i.value = String(this.autosaveInterval);
+      const f = document.getElementById('formatOnSaveToggle');
+      if (f) f.checked = !!this.formatOnSave;
     }
 
     /** 状态栏那一行：自动保存到底有没有发生，得看得见。 */
@@ -454,7 +485,7 @@
     _scheduleAutoSave() {
       if (!this.isDesktop || !this.autosaveToFile) return;
       clearTimeout(this._autosaveTimer);
-      this._autosaveTimer = setTimeout(() => this.autosaveNow(), AUTOSAVE_IDLE_MS);
+      this._autosaveTimer = setTimeout(() => this.autosaveNow(), this.autosaveInterval);
     }
 
     /**
@@ -611,11 +642,15 @@
             <h3 class="ws-ask-title" id="wsAskTitle"></h3>
             <p class="ws-ask-body"></p>
             <div class="ws-ask-buttons">
-              <button type="button" class="ws-ask-btn is-primary" data-act="save">${T('保存')}</button>
-              <button type="button" class="ws-ask-btn is-danger" data-act="discard">${T('不保存')}</button>
-              <button type="button" class="ws-ask-btn" data-act="cancel">${T('取消')}</button>
+              <button type="button" class="ws-ask-btn is-primary" data-act="save" data-i18n="保存">保存</button>
+              <button type="button" class="ws-ask-btn is-danger" data-act="discard" data-i18n="不保存">不保存</button>
+              <button type="button" class="ws-ask-btn" data-act="cancel" data-i18n="取消">取消</button>
             </div>
           </div>`;
+        // 这个对话框是临时拼出来的，语言切换的 applyDom 扫不到它 —— 只有它开着的
+        // 那一刻才在 DOM 里。所以插进来之后立刻自己翻译一次；同时标上 data-i18n，
+        // 万一切换语言时它正开着，applyDom 也能改到。
+        if (global.LuoguI18n) global.LuoguI18n.applyDom(overlay);
         // 文件名来自磁盘，用 textContent 写入，不做字符串拼接。
         overlay.querySelector('.ws-ask-title').textContent = T('是否保存更改？');
         overlay.querySelector('.ws-ask-body').textContent =

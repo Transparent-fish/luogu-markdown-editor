@@ -164,6 +164,15 @@ jobs:
       - name: Layout and print suite
         run: node test-browser/layout-print.test.js
 
+      # The settings sub-page: the gear used to open a hover dropdown; now it opens a
+      # modal with 外观 / 语言 / 编辑器, where every choice is a <select> (language and
+      # theme included) plus the desktop-only autosave delay. This guards the entry
+      # point, the dropdowns writing through to real state, and that the web build
+      # hides the disk-only rows. The delay actually changing write timing is covered
+      # in the autosave suite, which has a fake disk.
+      - name: Settings suite
+        run: node test-browser/settings.test.js
+
       # Bilingual UI, end to end: the browser reports en-US here, so this also pins the
       # first-run default (follow the system language). It checks the text that is only
       # produced while rendering — tab labels, status bar, the help manual, the formula

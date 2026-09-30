@@ -92,37 +92,12 @@
         </div>
       </div>
 
-      <!-- Settings -->
-      <div class="tool-dropdown">
-        <button class="btn btn-icon-only" title="设置" aria-label="设置" data-i18n-aria-label="设置" data-i18n-title="设置">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.35.4.64.73.83H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </button>
-        <div class="dropdown-menu dropdown-menu-right">
-          <button class="dropdown-item" id="lintToggleItem" onclick="LuoguEditor.toggleLintDisplay()">
-            <span id="lintToggleMark">✅</span> <span data-i18n="显示排版问题">显示排版问题</span>
-          </button>
-          <!-- 下面两项依赖"真实磁盘"，所以只在桌面版显示（.ws-desktop-only 由
-               html.ws-desktop 解锁）。网页版现在也有标签页了，但保存是下载一份副本，
-               自动写回和保存时排版在那儿没有意义。 -->
-          <button class="dropdown-item ws-desktop-only" id="autoSaveToggleItem"
-                  onclick="LuoguEditor.workspace.setAutosaveToFile(!LuoguEditor.workspace.autosaveToFile)">
-            <span id="autoSaveMark">✅</span> <span data-i18n="自动保存到文件">自动保存到文件</span>
-          </button>
-          <button class="dropdown-item" id="langZhItem" onclick="LuoguEditor.setLanguage('zh')">
-            <span id="langZhMark">⬜</span> <span data-i18n="简体中文">简体中文</span>
-          </button>
-          <button class="dropdown-item" id="langEnItem" onclick="LuoguEditor.setLanguage('en')">
-            <span id="langEnMark">⬜</span> <span data-i18n="English">English</span>
-          </button>
-          <button class="dropdown-item" id="langSystemItem" onclick="LuoguEditor.setLanguage('system')">
-            <span id="langSystemMark">⬜</span> <span data-i18n="跟随系统语言">跟随系统语言</span>
-          </button>
-          <button class="dropdown-item ws-desktop-only" id="formatOnSaveToggleItem"
-                  onclick="LuoguEditor.workspace.setFormatOnSave(!LuoguEditor.workspace.formatOnSave)">
-            <span id="formatOnSaveMark">✅</span> <span data-i18n="保存时自动排版">保存时自动排版</span>
-          </button>
-        </div>
-      </div>
+      <!-- Settings：点齿轮打开设置弹窗（外观 / 语言 / 编辑器）。原来这里是个
+           下拉框，项目一多就挤成一条长菜单，而且悬停才展开、手机上不好点。 -->
+      <button class="btn btn-icon-only" id="settingsBtn" onclick="LuoguEditor.openSettings()"
+              title="设置" aria-label="设置" data-i18n-aria-label="设置" data-i18n-title="设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.35.4.64.73.83H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
 
       <!-- Theme Switcher -->
       <div class="tool-dropdown">
@@ -423,6 +398,87 @@
      ========================================================================== -->
 
 <!-- 1. KaTeX Math Cheatsheet Modal -->
+<!-- 0. Settings Modal（齿轮打开） -->
+<div id="settingsModal" class="modal-overlay">
+  <div class="modal-dialog modal-dialog-large">
+    <div class="modal-header">
+      <h3 class="modal-title" data-i18n="⚙️ 设置">⚙️ 设置</h3>
+      <button class="modal-close-btn" onclick="LuoguEditor.closeModal('settingsModal')" aria-label="关闭" data-i18n-aria-label="关闭">&times;</button>
+    </div>
+    <div class="modal-body settings-body">
+      <!-- 外观 -->
+      <section class="settings-section">
+        <h4 class="settings-section-title" data-i18n="外观">外观</h4>
+        <div class="settings-row">
+          <label class="settings-label" for="settingsThemeSelect" data-i18n="主题">主题</label>
+          <select id="settingsThemeSelect" class="form-select settings-control"
+                  onchange="LuoguEditor.setTheme(this.value)">
+            <option value="light" data-i18n="☀️ 亮色（light）">☀️ 亮色（light）</option>
+            <option value="dark" data-i18n="🌙 暗色（dark）">🌙 暗色（dark）</option>
+          </select>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label" data-i18n="显示排版问题">显示排版问题</span>
+          <label class="settings-switch">
+            <input type="checkbox" id="lintDisplayToggle" onchange="LuoguEditor.toggleLintDisplay(this.checked)" />
+            <span class="settings-hint" data-i18n="关闭后状态栏的排版评分会隐藏，编辑时也不再运行排版检查">关闭后状态栏的排版评分会隐藏，编辑时也不再运行排版检查</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- 语言 -->
+      <section class="settings-section">
+        <h4 class="settings-section-title" data-i18n="语言">语言</h4>
+        <div class="settings-row">
+          <label class="settings-label" for="settingsLangSelect" data-i18n="界面语言">界面语言</label>
+          <select id="settingsLangSelect" class="form-select settings-control"
+                  onchange="LuoguEditor.setLanguage(this.value)">
+            <option value="system" data-i18n="跟随系统语言">跟随系统语言</option>
+            <option value="zh" data-i18n="简体中文">简体中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- 编辑器：整节都是磁盘相关的设置，网页版下连标题一起隐藏 -->
+      <section class="settings-section ws-desktop-only">
+        <h4 class="settings-section-title" data-i18n="编辑器">编辑器</h4>
+        <!-- 下面三项依赖“真实磁盘”，只在桌面版显示（.ws-desktop-only 由 html.ws-desktop 解锁）。 -->
+        <div class="settings-row">
+          <span class="settings-label" data-i18n="自动保存到文件">自动保存到文件</span>
+          <label class="settings-switch">
+            <input type="checkbox" id="autoSaveToggle"
+                   onchange="LuoguEditor.workspace.setAutosaveToFile(this.checked)" />
+            <span class="settings-hint" data-i18n="停止输入后自动写回原文件，不需要按 Ctrl+S">停止输入后自动写回原文件，不需要按 Ctrl+S</span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <label class="settings-label" for="settingsAutosaveInterval" data-i18n="自动保存间隔">自动保存间隔</label>
+          <select id="settingsAutosaveInterval" class="form-select settings-control"
+                  onchange="LuoguEditor.workspace.setAutosaveInterval(Number(this.value))">
+            <option value="500" data-i18n="0.5 秒（停下来就写）">0.5 秒（停下来就写）</option>
+            <option value="1000" data-i18n="1 秒">1 秒</option>
+            <option value="2500" data-i18n="2.5 秒（默认）">2.5 秒（默认）</option>
+            <option value="5000" data-i18n="5 秒">5 秒</option>
+            <option value="10000" data-i18n="10 秒（省电、省写盘）">10 秒（省电、省写盘）</option>
+          </select>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label" data-i18n="保存时自动排版">保存时自动排版</span>
+          <label class="settings-switch">
+            <input type="checkbox" id="formatOnSaveToggle"
+                   onchange="LuoguEditor.workspace.setFormatOnSave(this.checked)" />
+            <span class="settings-hint" data-i18n="写回前先套用洛谷排版规范">写回前先套用洛谷排版规范</span>
+          </label>
+        </div>
+      </section>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="LuoguEditor.closeModal('settingsModal')" data-i18n="完成">完成</button>
+    </div>
+  </div>
+</div>
+
 <div id="mathModal" class="modal-overlay">
   <div class="modal-dialog modal-dialog-large">
     <div class="modal-header">
@@ -871,9 +927,15 @@
 
       <h4 style="color:var(--luogu-blue); margin-top: 16px;" data-i18n="⚙️ 设置：">⚙️ 设置：</h4>
       <ul style="padding-left: 20px; margin-top: 6px;">
-        <li data-i18n-html="<b>显示排版问题</b>：顶栏齿轮图标 → 勾选/取消。关闭后状态栏右下角的「排版评分」徽标会隐藏，
-          编辑时也不再运行排版检查（长文档可省下每次输入的检查开销）；设置会被记住。"><b>显示排版问题</b>：顶栏齿轮图标 → 勾选/取消。关闭后状态栏右下角的「排版评分」徽标会隐藏，
-          编辑时也不再运行排版检查（长文档可省下每次输入的检查开销）；设置会被记住。</li>
+        <li data-i18n-html="<b>设置页</b>：点顶栏右上角的齿轮打开（<code>Esc</code> 或「完成」关闭）。里面分 外观 / 语言 / 编辑器 三节：
+          <b>主题</b>（亮色 / 暗色）、<b>界面语言</b>（跟随系统 / 简体中文 / English）、<b>显示排版问题</b>、
+          以及桌面版的<b>自动保存到文件</b>、<b>自动保存间隔</b>（0.5 / 1 / 2.5 / 5 / 10 秒）与<b>保存时自动排版</b>。
+          关掉「显示排版问题」后，状态栏右下角的「排版评分」徽标会隐藏，编辑时也不再运行排版检查
+          （长文档可省下每次输入的检查开销）；所有设置都会被记住。"><b>设置页</b>：点顶栏右上角的齿轮打开（<code>Esc</code> 或「完成」关闭）。里面分 外观 / 语言 / 编辑器 三节：
+          <b>主题</b>（亮色 / 暗色）、<b>界面语言</b>（跟随系统 / 简体中文 / English）、<b>显示排版问题</b>、
+          以及桌面版的<b>自动保存到文件</b>、<b>自动保存间隔</b>（0.5 / 1 / 2.5 / 5 / 10 秒）与<b>保存时自动排版</b>。
+          关掉「显示排版问题」后，状态栏右下角的「排版评分」徽标会隐藏，编辑时也不再运行排版检查
+          （长文档可省下每次输入的检查开销）；所有设置都会被记住。</li>
         <li data-i18n="关闭后，工具栏的「洛谷排版修复」按钮仍可随时手动使用。">关闭后，工具栏的「洛谷排版修复」按钮仍可随时手动使用。</li>
       </ul>
 

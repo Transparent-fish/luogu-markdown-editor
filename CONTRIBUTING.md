@@ -42,7 +42,7 @@ python3 app.py              # 本地起服务（仅本机可访问）
 | 配置 | 配错的后果 |
 | :--- | :--- |
 | `app.withGlobalTauri` | 必须为 `true`。前端靠 `window.__TAURI__` 判断有没有原生文件系统；Tauri v2 默认**不注入**，于是 `detectHost()` 永远是 null，整个工作区面板（含文件树）都不出现 |
-| `windows[0].dragDropEnabled` | 必须为 `false`。Tauri 默认接管 webview 的拖放，Windows 上页面内 HTML5 拖拽随之失效，文件树的拖拽移动就没反应 |
+| `windows[0].dragDropEnabled` | 必须为 `true`。原生拖放事件带**绝对路径**，拖进来的文件才能写回原文件（HTML5 drop 只给 File 对象，没有路径）。代价是 Windows 上页面内 HTML5 拖拽失效，所以文件树的拖动用指针事件实现——别改回 `draggable` |
 | `capabilities` 里的 `fs:allow-*` | 少一条，对应操作在点击时才失败。`fs:allow-rename` 是新旧文件树交互都依赖的一条 |
 
 另外，打开文件夹时必须传 `recursive: true`：对话框只把**它返回的那个路径**加进文件系统

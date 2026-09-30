@@ -53,7 +53,7 @@ const FAKE_FS = `{
     }
   };
 
-  // ---- 1. plain browser: the panel must not exist at all ---------------------
+  // ---- 1. plain browser: tabs, but no file tree ------------------------------
   {
     const p = await b.newPage({ viewport: { width: 1280, height: 800 } });
     const errs = [];
@@ -61,13 +61,61 @@ const FAKE_FS = `{
     await p.goto(APP, { waitUntil: 'networkidle' });
     await p.waitForTimeout(800);
     ck(await p.evaluate(() => !document.getElementById('workspacePanel')),
-      '普通浏览器下不创建工作区面板');
-    ck(await p.evaluate(() => !document.documentElement.classList.contains('has-workspace')),
-      '未加 has-workspace 类');
-    ck(await p.evaluate(() => typeof LuoguEditor.workspace === 'undefined'),
-      '未挂载 workspace 实例');
-    ck(await p.evaluate(() => typeof LuoguWorkspace === 'function'),
-      '但代码本身已随包发出（供桌面版使用）');
+      '普通浏览器下不创建文件树面板（网页版读不到本地目录）');
+    ck(await p.evaluate(() => !document.documentElement.classList.contains('ws-desktop')),
+      '未加 ws-desktop 类');
+    ck(await p.evaluate(() => document.documentElement.classList.contains('has-workspace')),
+      '但标签页是有的（多标签在网页版同样可用）');
+    ck(await p.evaluate(() => typeof LuoguEditor.workspace === 'object'
+      && LuoguEditor.workspace.mode === 'web'), '挂载了网页版形态的 workspace');
+    ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length === 1),
+      '网页版初始也有一个标签页');
+    // 多标签：新建 + 中键关闭
+    await p.evaluate(() => LuoguEditor.workspace.newTab());
+    await p.waitForTimeout(300);
+    ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length === 2),
+      '网页版可以新建标签页');
+    await p.click('.ws-tab:nth-child(2)', { button: 'middle' });
+    await p.waitForTimeout(300);
+    ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length === 1),
+      '网页版标签页中键可以关闭');
+
+    // 网页版没有磁盘，标签页只能自己记着：写完刷新，两份都该还在。
+    await p.evaluate(() => LuoguEditor.workspace.newTab());
+    await p.waitForTimeout(300);
+    await p.evaluate(() => {
+      const ta = document.getElementById('editorTextarea');
+      ta.value = '# 第二份草稿\n\n刷新之后还应该在。\n';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await p.waitForTimeout(1200);   // 等它自己存（防抖 800ms）
+    await p.reload({ waitUntil: 'networkidle' });
+    await p.waitForTimeout(900);
+    ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length === 2),
+      '网页版刷新之后标签页还在');
+    ck(await p.evaluate(() => [...document.querySelectorAll('.ws-tab-name')]
+      .some((el) => el.textContent === '未命名.md')), '未命名的那份也在');
+    ck(await p.evaluate(() => [...document.querySelectorAll('.ws-tab-name')]
+      .some((el) => el.textContent.includes('草稿')) || LuoguEditor.workspace.docs
+        .some((d) => d.content.includes('刷新之后还应该在'))),
+      '标签页内容一并恢复');
+
+    // 网页版 Ctrl+S：没有磁盘，走编辑器自己的下载 / 句柄那条路，不能崩
+    await p.evaluate(() => {
+      const ws = LuoguEditor.workspace;
+      ws.newTab();
+    });
+    await p.waitForTimeout(300);
+    await p.evaluate(() => {
+      const ta = document.getElementById('editorTextarea');
+      ta.value = '# 要保存的东西\n';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      ta.focus();
+    });
+    await p.keyboard.press('Control+s');
+    await p.waitForTimeout(600);
+    ck(await p.evaluate(() => LuoguEditor.workspace.docs[LuoguEditor.workspace.active].dirty === false),
+      '网页版 Ctrl+S 走的是编辑器自己的保存（下载 / 句柄），不报错也不卡住');
     ck(errs.length === 0, '网页版无报错', errs.slice(0, 2).join(' | '));
     await p.close();
   }
@@ -278,6 +326,61 @@ const FAKE_FS = `{
   ck(paths.length === new Set(paths).size, '并发渲染不会让文件树重复',
     JSON.stringify(paths));
   ck(paths.length === 5, '树结构正确（根 + sub + c.md + a.md + b.md）', JSON.stringify(paths));
+
+  // ---- 折叠侧栏 --------------------------------------------------------------
+  const panelWidth = () => p.evaluate(() => Math.round(
+    document.getElementById('workspacePanel').getBoundingClientRect().width));
+  const wideBefore = await panelWidth();
+  await p.click('#wsCollapse');
+  await p.waitForTimeout(400);
+  const narrow = await panelWidth();
+  ck(narrow < wideBefore && narrow <= 40, '收起后侧栏只剩一条窄轨道', `${wideBefore} -> ${narrow}`);
+  ck(await p.evaluate(() => document.getElementById('workspacePanel').classList.contains('is-collapsed')),
+    '面板带上 is-collapsed 类');
+  ck(await p.evaluate(() => getComputedStyle(document.getElementById('wsTree')).display === 'none'),
+    '收起后文件树不再显示');
+  ck(await p.evaluate(() => getComputedStyle(document.getElementById('wsExpand').closest('.ws-rail')).display !== 'none'),
+    '轨道上的展开按钮可见');
+  ck(await p.evaluate(() => document.querySelector('.ws-resizer').hidden === true),
+    '收起后拖宽度的把手一并隐藏');
+  await p.click('#wsExpand');
+  await p.waitForTimeout(400);
+  ck(await panelWidth() === wideBefore, '展开后回到原来的宽度', String(await panelWidth()));
+  ck(await p.evaluate(() => getComputedStyle(document.getElementById('wsTree')).display !== 'none'),
+    '展开后文件树回来了');
+
+  // 折叠状态要记住
+  await p.click('#wsCollapse');
+  await p.waitForTimeout(300);
+  await p.reload({ waitUntil: 'networkidle' });
+  await p.waitForTimeout(900);
+  ck(await p.evaluate(() => document.getElementById('workspacePanel').classList.contains('is-collapsed')),
+    '重开还是收起状态（记住上次的样子）');
+  await p.click('#wsExpand');
+  await p.waitForTimeout(300);
+  ck(await p.evaluate(() => !document.getElementById('workspacePanel').classList.contains('is-collapsed')),
+    '点展开就恢复');
+
+  // Ctrl+B 也能收（焦点不在编辑区时）
+  await p.evaluate(() => document.getElementById('wsTree').focus());
+  await p.keyboard.press('Control+b');
+  await p.waitForTimeout(300);
+  ck(await p.evaluate(() => document.getElementById('workspacePanel').classList.contains('is-collapsed')),
+    'Ctrl+B 收起侧栏');
+  await p.keyboard.press('Control+b');
+  await p.waitForTimeout(300);
+  ck(await p.evaluate(() => !document.getElementById('workspacePanel').classList.contains('is-collapsed')),
+    '再按一次 Ctrl+B 展开');
+
+  // Ctrl+W 关标签页
+  const tabsBeforeW = await p.evaluate(() => document.querySelectorAll('.ws-tab').length);
+  await p.evaluate(() => LuoguEditor.workspace.newTab());
+  await p.waitForTimeout(300);
+  await p.evaluate(() => document.getElementById('editorTextarea').focus());
+  await p.keyboard.press('Control+w');
+  await p.waitForTimeout(400);
+  ck(await p.evaluate(() => document.querySelectorAll('.ws-tab').length) === tabsBeforeW,
+    'Ctrl+W 关闭当前标签页');
 
   ck(errs.length === 0, '桌面模式无 JS 报错', errs.slice(0, 3).join(' | '));
   console.log(`\n工作区面板 ${pass + fail} 项，失败 ${fail}`);

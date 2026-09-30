@@ -330,7 +330,7 @@ const FAKE_FS = `
   await browser.goto(APP, { waitUntil: 'networkidle' });
   await browser.waitForTimeout(700);
   ck(await browser.evaluate(() => {
-    const items = [...document.querySelectorAll('.dropdown-item.ws-only')];
+    const items = [...document.querySelectorAll('.dropdown-item.ws-desktop-only')];
     return items.length === 2 && items.every((el) => getComputedStyle(el).display === 'none');
   }), '网页版：这两个设置项不显示（那儿没有可写回的文件）');
   await browser.close();

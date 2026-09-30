@@ -225,8 +225,11 @@ const FAKE_FS = `
 
   ck(await p.evaluate(() => {
     const row = document.querySelector('#wsTree .ws-node[data-path="/proj/src/main.cpp"]');
-    return row.draggable === true;
-  }), '行可拖拽（原生 HTML5 拖拽已接上）');
+    // 故意不再是 HTML5 的 draggable：桌面版开着 Tauri 的原生拖放（拖进来的文件才带
+    // 绝对路径），而它在 Windows 上会把页面里的 HTML5 拖放顶掉。拖动改由指针事件
+    // 驱动（_pressRow），这条断言守住的是"别再改回去"。
+    return row.draggable === false && row.hasAttribute('draggable') === false;
+  }), '行不再依赖 HTML5 拖拽（改用指针事件）');
 
   // ---- 2. 过滤 --------------------------------------------------------------
   await p.fill('#wsFilter', 'util');
@@ -411,14 +414,27 @@ const FAKE_FS = `
   ck(await tabCount() === tabsAfterOpen, 'Ctrl+点击只加选，不会顺带打开文件');
   ck(await p.evaluate(() => LuoguEditor.workspace.selection.size === 2), '选择集里是两个路径');
 
-  const dragTo = async (from, to) => p.evaluate(([f, t]) => {
-    const q = (x) => document.querySelector(`#wsTree .ws-node[data-path="${x}"]`);
-    const src = q(f), dst = q(t);
-    const dt = new DataTransfer();
-    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
-    dst.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
-    dst.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-  }, [from, to]);
+  // 树里的拖动走指针事件（桌面版把 OS 拖放让给了 Tauri 的原生处理器，WebView 里的
+  // HTML5 拖放在 Windows 上会被顶掉，见 src/luogu-workspace.js 的 _pressRow）。
+  // Playwright 的 mouse 会派发 pointerdown / pointermove / pointerup，走的正是用户
+  // 按着鼠标拖动的那条路。
+  const boxOf = async (path) => p.locator(`#wsTree .ws-node[data-path="${path}"]`).boundingBox();
+  const centerOf = (b) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+  const pressAt = async (pt) => {
+    await p.mouse.move(pt.x, pt.y);
+    await p.mouse.down();
+    // 先横向挪出阈值，再走向目标——少了这一步会被当成一次普通单击。
+    await p.mouse.move(pt.x + 18, pt.y + 8, { steps: 4 });
+  };
+  const dragTo = async (from, to) => {
+    const src = centerOf(await boxOf(from));
+    await pressAt(src);
+    const dst = centerOf(await boxOf(to));
+    await p.mouse.move(dst.x, dst.y, { steps: 8 });
+    await p.waitForTimeout(120);
+    await p.mouse.up();
+    await p.waitForTimeout(250);
+  };
 
   await dragTo('/proj/src/helper.cpp', '/proj/assets');
   await p.waitForTimeout(700);
@@ -446,6 +462,42 @@ const FAKE_FS = `
   await p.waitForTimeout(600);
   ck((await toasts()).includes('跳过'), '拖进自身内部被拒绝并提示', await toasts());
   ck(await p.evaluate(() => Array.isArray(window.__FAKE.dirs['/proj/src'])), '被拒绝后原目录完好');
+
+  // 拖动时跟着指针的小标签。先把选择集收成单独一个文件，免得带上刚才多选的那份。
+  await p.evaluate(() => {
+    const ws = LuoguEditor.workspace;
+    ws.selection = new Set(['/proj/assets/helper.cpp']);
+    ws.focusPath = '/proj/assets/helper.cpp';
+    ws._paintSelection();
+  });
+  const srcPt = centerOf(await boxOf('/proj/assets/helper.cpp'));
+  await pressAt(srcPt);
+  await p.mouse.move(srcPt.x + 40, srcPt.y + 24, { steps: 5 });
+  const ghost = await p.evaluate(() => {
+    const g = document.querySelector('.ws-drag-ghost');
+    return g ? { text: g.textContent, hidden: g.hidden } : null;
+  });
+  ck(ghost && !ghost.hidden && ghost.text === 'helper.cpp', '拖动时跟着指针显示文件名', JSON.stringify(ghost));
+  ck(await p.evaluate(() => document.querySelectorAll('#wsTree .ws-node.is-dragging').length === 1),
+    '被拖动的行有高亮');
+  // 拖到树的空白处 = 移到工作目录根
+  const blank = await p.evaluate(() => {
+    const tree = document.getElementById('wsTree');
+    const r = tree.getBoundingClientRect();
+    const rows = tree.querySelectorAll('.ws-node');
+    const last = rows.length ? rows[rows.length - 1].getBoundingClientRect() : r;
+    return { x: r.left + r.width - 30, y: Math.min(r.bottom - 10, last.bottom + 14) };
+  });
+  await p.mouse.move(blank.x, blank.y, { steps: 8 });
+  await p.waitForTimeout(120);
+  await p.mouse.up();
+  await p.waitForTimeout(600);
+  ck(await p.evaluate(() => '/proj/helper.cpp' in window.__FAKE.files),
+    '拖到树的空白处 = 移到工作目录根');
+  ck(await p.evaluate(() => document.querySelector('.ws-drag-ghost').hidden === true),
+    '松手后小标签消失');
+  ck(await p.evaluate(() => document.querySelectorAll('#wsTree .ws-node.is-drop-target').length === 0),
+    '松手后落点高亮清干净');
 
   // 同名冲突
   await p.evaluate(() => window.__FAKE.seed('/proj/assets/entry.cpp', '占位'));

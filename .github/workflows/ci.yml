@@ -167,9 +167,21 @@ jobs:
       # The file explorer's own suite: icons/indent guides, filter, keyboard
       # navigation, multi-select, and create/rename/delete/move against a mutable
       # fake disk — the point being that a menu item has to touch the filesystem,
-      # not just repaint the tree.
+      # not just repaint the tree. The move-by-drag cases drive real mouse input,
+      # because tree dragging runs on pointer events rather than HTML5 DnD.
       - name: File explorer suite
         run: node test-browser/workspace-explorer.test.js
+
+      # Unsaved-changes dialog, autosave to disk, format-on-save, and the persistence
+      # of theme / view mode / panel width across a reload.
+      - name: Autosave and close-protection suite
+        run: node test-browser/workspace-autosave.test.js
+
+      # Native file drops. The point of this one: a dropped file must carry its
+      # absolute path so Ctrl+S writes back to the original file instead of asking
+      # "save as" — the regression that HTML5 file drops cause.
+      - name: Native drop suite
+        run: node test-browser/workspace-drop.test.js
 
   # 发布流程本身也得有人看着。workflow 文件里的错误通常要等到打 tag 那一刻才暴露，
   # 而那正是最不想出岔子的时候；actionlint 会顺带用 shellcheck 检查所有 run: 块，

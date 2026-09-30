@@ -26,16 +26,24 @@ test('withGlobalTauri 必须为 true，否则工作区面板永远不会出现',
   );
 });
 
-test('关闭 dragDropEnabled，否则文件树的拖拽在 Windows 上不会生效', () => {
+test('打开 dragDropEnabled，否则拖进来的文件拿不到路径，Ctrl+S 只能另存为', () => {
   const conf = readJson('desktop/src-tauri/tauri.conf.json');
   const win = conf.app.windows[0];
-  // Tauri 默认接管 webview 的拖放以产生自己的 DragDropEvent，官方文档写明
-  // "Disabling it is required to use HTML5 drag and drop on the frontend on Windows
-  // since we replace the drag drop handler of WebView2"。不关掉，页面里 draggable
-  // 的元素（文件树的行）在 Windows 上根本拖动不了。
-  // 代价是没有原生拖放事件，但编辑器"把文件拖进窗口打开"本来监听的就是标准
-  // HTML5 drop 事件（见 src/editor.js），关掉之后走的就是浏览器原生路径。
-  assert.strictEqual(win.dragDropEnabled, false, 'windows[0].dragDropEnabled 必须为 false');
+  // WebView 的 HTML5 drop 只给 File 对象，不给路径（`.path` 是 Electron 才有的），
+  // 所以关掉原生拖放虽然能让页面里的 HTML5 拖拽工作，却换来"拖进来的文件没有出处"
+  // ——保存时只能弹另存为。原生事件带绝对路径，拖进来的文件因此和从文件树打开的
+  // 一模一样。
+  assert.strictEqual(win.dragDropEnabled, true, 'windows[0].dragDropEnabled 必须为 true');
+});
+
+test('既然开了原生拖放，页面里就不能再依赖 HTML5 拖放', () => {
+  const src = read('src/luogu-workspace.js');
+  // 开原生拖放的代价：Windows 上 WebView 里的 HTML5 拖放会被顶掉。文件树的拖动
+  // 因此改成指针事件（_pressRow / _dragMove / _dragUp），一旦有人改回 draggable，
+  // Windows 上会静默失灵——这条断言就是拦住那次改动。
+  assert.ok(!/draggable\s*=\s*true/.test(src), '文件树不应再使用 HTML5 draggable');
+  assert.match(src, /_pressRow\(/, '文件树的拖动应由指针事件驱动');
+  assert.match(src, /tauri:\/\/drag-drop/, '应订阅 Tauri 的原生拖放事件');
 });
 
 test('文件操作所需的 fs 权限都在 capabilities 里', () => {
@@ -82,11 +90,15 @@ test('打开文件夹时要声明递归读取，否则子目录拿不到写权�
   );
 });
 
-test('没有原生文件系统时，工作区面板不得启用', () => {
-  // 网页版靠这条保持"左侧什么都没有"的原状：detectHost 拿不到宿主就返回 null。
+test('没有原生文件系统时进入网页版形态：只有标签页，没有文件树', () => {
+  // 网页版现在也有多标签（用户要的），但没有可写回的磁盘：文件树、自动保存到文件、
+  // 写回原文件这些都得靠 isDesktop 关掉，否则会对着 null 调 fs。
   const { detectHost, LuoguWorkspace } = require('../src/luogu-workspace.js');
   assert.strictEqual(detectHost(), null);
-  assert.strictEqual(new LuoguWorkspace({}).enabled, false);
+  const ws = new LuoguWorkspace({});
+  assert.strictEqual(ws.mode, 'web');
+  assert.strictEqual(ws.isDesktop, false);
+  assert.strictEqual(ws.enabled, false, '挂载成功前不算启用');
 });
 
 test('面板图标不得依赖任何外部资源', () => {

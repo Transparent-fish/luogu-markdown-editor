@@ -25,12 +25,19 @@
   const AUTOSAVE_IDLE_MS = 2500;
   const AUTOSAVE_KEY = 'luogu_workspace_autosave';
   const FORMAT_ON_SAVE_KEY = 'luogu_workspace_format_on_save';
+  const COLLAPSED_KEY = 'luogu_workspace_collapsed';
+  // 网页版没有磁盘可写，标签页只能自己记着——不然刷新一下全丢。
+  const WEB_DOCS_KEY = 'luogu_workspace_web_docs';
+  const WEB_DOCS_MAX = 2 * 1024 * 1024;   // localStorage 通常 5MB，留一半余量
   const RECENT_KEY = 'luogu_editor_recent_files';
   const WIDTH_KEY = 'luogu_workspace_width';
   const WIDTH_DEFAULT = 240;
   const WIDTH_MIN = 180;
   const WIDTH_MAX = 480;
   const INDENT_PX = 14;
+  const RAIL_W = 36;          // 侧栏折叠后留的那条窄轨道
+  const DRAG_THRESHOLD = 4;   // 指针移动多少像素才算"在拖"，而不是手抖
+  const MAX_DROP = 10;        // 一次拖进来太多文件就先只开这些
   // A filter walks the whole tree, so it needs a ceiling: past a few hundred nodes the
   // walk stops being instant and the result stops being readable anyway.
   const FILTER_MAX_NODES = 400;
@@ -143,6 +150,9 @@
     refresh: ['M13 8a5 5 0 1 1-1.6-3.7', 'M13.2 2.4V5.2h-2.8'],
     newFile: ['M4 2h5l3 3v9H4z', 'M10.6 10.2h3.6M12.4 8.4v3.6'],
     newDir: ['M1.8 4c0-.6.4-1 1-1h3.3c.3 0 .6.1.8.4l.9 1.1h5.4c.6 0 1 .4 1 1v7.1H1.8z', 'M10.6 10.2h3.6M12.4 8.4v3.6'],
+    // 折叠 / 展开侧栏：一对反向的双箭头。
+    collapse: ['M9.4 5.2 6.9 8l2.5 2.8', 'M12.4 5.2 9.9 8l2.5 2.8'],
+    expand: ['M6.6 5.2 9.1 8l-2.5 2.8', 'M3.6 5.2 6.1 8l-2.5 2.8'],
   };
 
   // Extension -> icon family and CSS colour slot. Ordered: first match wins.
@@ -273,7 +283,17 @@
       // 两个开关默认打开：都是"不用操心"的功能，随时可以在设置里关掉。
       this.autosaveToFile = this._readFlag(AUTOSAVE_KEY, true);
       this.formatOnSave = this._readFlag(FORMAT_ON_SAVE_KEY, true);
-      this.enabled = !!this.fs;
+      // 'desktop' 有原生文件系统（文件树、写回、自动保存）；'web' 只有标签页。
+      this.mode = this.fs ? 'desktop' : 'web';
+      this.isDesktop = this.mode === 'desktop';
+      this.collapsed = this._readFlag(COLLAPSED_KEY, false);
+      this._widthBeforeCollapse = null;
+      this.press = null;          // 指针拖动树的进行中状态（见 _pressRow）
+      this._justDragged = false;  // 拖动刚结束，接下来的 click 不算点击
+      this._ghost = null;
+      this._webPersistTimer = null;
+      this.nativeDrop = false;    // 桌面版是否已接上 OS 原生拖放（见 _bindNativeDrop）
+      this.enabled = false;       // mount() 成功之后才为真
     }
 
     // ---- 偏好 ---------------------------------------------------------------
@@ -319,27 +339,78 @@
       const el = document.getElementById('fileSaveStatus');
       if (el) {
         el.textContent = text;
-        el.parentElement && (el.parentElement.hidden = !this.enabled);
+        el.parentElement && (el.parentElement.hidden = !this.isDesktop);
       }
     }
 
     // ---- lifecycle -----------------------------------------------------------
 
     mount() {
-      if (!this.enabled) return false;
       this._buildDom();
       this._bindEditor();
-      // Whatever is already in the editor becomes the first tab, so the user never
-      // loses the draft they had open when the panel appeared.
-      this.docs.push({
-        path: null,
-        name: this.editor.docName || '未命名.md',
-        content: this.editor.getContent(),
-        dirty: false,
-      });
-      this.active = 0;
+
+      // 网页版：把上次没来得及关掉的标签页放回来。桌面版不需要——文件在磁盘上，
+      // 想要哪份自己打开就行，把一堆正文塞进 localStorage 反而是负担。
+      const restored = this.isDesktop ? null : this._restoreWebDocs();
+      if (restored && restored.length) {
+        this.docs = restored;
+        this.active = 0;
+        const first = this.docs[0];
+        this.editor.docName = first.name;
+        const nameInput = document.getElementById('docNameInput');
+        if (nameInput) nameInput.value = first.name;
+        this.editor.setContent(first.content, false);
+      } else {
+        // Whatever is already in the editor becomes the first tab, so the user never
+        // loses the draft they had open when the panel appeared.
+        this.docs.push({
+          path: null,
+          name: this.editor.docName || '未命名.md',
+          content: this.editor.getContent(),
+          dirty: false,
+        });
+        this.active = 0;
+      }
+
+      this.enabled = true;
+      this._bindNativeDrop();
       this.render();
       return true;
+    }
+
+    // ---- 网页版的标签页记忆 ---------------------------------------------------
+
+    _restoreWebDocs() {
+      try {
+        const raw = global.localStorage && global.localStorage.getItem(WEB_DOCS_KEY);
+        const v = raw ? JSON.parse(raw) : null;
+        if (!Array.isArray(v) || !v.length) return null;
+        const docs = v
+          .filter((d) => d && typeof d.name === 'string' && typeof d.content === 'string')
+          .map((d) => ({ path: null, name: d.name, content: d.content, dirty: false }));
+        return docs.length ? docs : null;
+      } catch (e) { return null; }
+    }
+
+    _scheduleWebPersist() {
+      if (this.isDesktop) return;
+      clearTimeout(this._webPersistTimer);
+      this._webPersistTimer = setTimeout(() => this._persistWebDocs(), 800);
+    }
+
+    _persistWebDocs() {
+      if (this.isDesktop) return;
+      try {
+        const payload = this.docs.map((d) => ({
+          name: d.name,
+          // 正在编辑的那份以编辑区为准，否则最后敲的几下会丢。
+          content: d === this.docs[this.active] ? this.editor.getContent() : d.content,
+        }));
+        const text = JSON.stringify(payload);
+        // 太大就放弃：宁可记不住，也不要在人家打字的时候抛配额异常。
+        if (text.length > WEB_DOCS_MAX) return;
+        global.localStorage && global.localStorage.setItem(WEB_DOCS_KEY, text);
+      } catch (e) { /* 记不住不影响使用 */ }
     }
 
     _bindEditor() {
@@ -356,6 +427,7 @@
           this.renderTabs();
           this._markDirtyInTree();
           this._scheduleAutoSave();
+          this._scheduleWebPersist();
         }
       });
     }
@@ -374,7 +446,7 @@
 
     /** 每次输入后重置计时器：写盘发生在"停下来"之后，而不是每敲一个字。 */
     _scheduleAutoSave() {
-      if (!this.autosaveToFile) return;
+      if (!this.isDesktop || !this.autosaveToFile) return;
       clearTimeout(this._autosaveTimer);
       this._autosaveTimer = setTimeout(() => this.autosaveNow(), AUTOSAVE_IDLE_MS);
     }
@@ -387,7 +459,7 @@
      * 没有路径的新文档一律跳过：自动保存绝不弹"另存为"对话框。
      */
     async autosaveNow() {
-      if (!this.autosaveToFile) return 0;
+      if (!this.isDesktop || !this.autosaveToFile) return 0;
       const targets = this.docs.filter((d) => d.dirty && d.path);
       if (!targets.length) return 0;
       let saved = 0;
@@ -631,6 +703,27 @@
       return this.saveIndex(this.active);
     }
 
+    /**
+     * 网页版的"保存"。编辑器自己知道这份文档是怎么打开的（File System Access 句柄
+     * 还是内存里的文件），所以这里把引用临时摘掉，让它走单文档那套逻辑——否则
+     * editor.saveMarkdownFile() 又会回头调用工作区，转成死循环。
+     */
+    async _saveThroughEditor(i, d) {
+      if (i !== this.active) { this._toast('请先切换到该标签页再保存', 'info'); return false; }
+      const editor = this.editor;
+      const own = editor.workspace;
+      editor.workspace = null;
+      try {
+        await editor.saveMarkdownFile();
+      } finally {
+        editor.workspace = own;
+      }
+      d.content = editor.getContent();
+      d.dirty = false;
+      this.renderTabs();
+      return true;
+    }
+
     /** 按索引保存，不只是当前标签页——关闭一个后台的脏标签页时也要能存。 */
     async saveIndex(i) {
       const d = this.docs[i];
@@ -640,6 +733,9 @@
 
       let path = d.path;
       if (!path) {
+        // 网页版没有可写的磁盘：交给编辑器自己处理——有 File System Access 句柄
+        // 就写回原文件，没有就是下载一份副本。两条路都是它本来就有的行为。
+        if (!this.isDesktop) return this._saveThroughEditor(i, d);
         path = await this.fs.saveAs({
           defaultPath: d.name,
           filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
@@ -687,12 +783,32 @@
     // ---- folder tree: reading ------------------------------------------------
 
     async openFolderDialog() {
+      if (!this.isDesktop) {
+        this._toast('网页版读不到本地文件夹，请下载桌面版，或用"打开文件"逐个打开', 'info');
+        return;
+      }
       const dir = await this.fs.openFolder();
       if (!dir) return;
       await this.setRoot(typeof dir === 'string' ? dir : dir.path || String(dir));
     }
 
     async openFileDialog() {
+      // 网页版没有原生对话框，让编辑器用自己的选择器（单选、带 File System Access
+      // 句柄），选完再补一个标签页——因为刚才把 workspace 摘掉了，它没机会自己补。
+      if (!this.isDesktop) {
+        const editor = this.editor;
+        const own = editor.workspace;
+        editor.workspace = null;
+        try {
+          await editor.triggerFileOpen();
+        } finally {
+          editor.workspace = own;
+        }
+        const ta = document.getElementById('editorTextarea');
+        if (ta && ta.value) this.adoptExternal({ name: editor.docName, content: ta.value, path: null });
+        return;
+      }
+
       const picked = await this.fs.openFile({
         multiple: true,
         filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }],
@@ -896,7 +1012,8 @@
       row.setAttribute('aria-level', String(depth + 1));
       if (isDir) row.setAttribute('aria-expanded', this.treeState[path] ? 'true' : 'false');
       row.title = path;
-      row.draggable = true;
+      // 不用 HTML5 的 draggable：桌面版把拖放交给了 Tauri 的原生处理器，WebView 里
+      // 的 HTML5 拖放在 Windows 上会被顶掉。树的拖动见 _pressRow（指针事件）。
 
       // Indent guides. A fixed-size, repeating gradient as the row's background keeps
       // this out of the DOM: one background box per level, no guide elements to manage.
@@ -942,6 +1059,8 @@
     _bindRow(row, node) {
       const { path, isDir } = node;
       row.onclick = (e) => {
+        // 拖完松手时浏览器还会补一个 click，那不是"点开文件"的意思。
+        if (this._justDragged) { this._justDragged = false; return; }
         if (e.ctrlKey || e.metaKey) {
           this._toggleSelect(path);
         } else if (e.shiftKey) {
@@ -969,36 +1088,8 @@
         if (!isDir) this.openPath(path);
       };
 
-      // --- drag and drop ---
-      row.ondragstart = (e) => {
-        const paths = this.selection.has(path) ? [...this.selection] : [path];
-        this._dragPaths = paths;
-        row.classList.add('is-dragging');
-        if (e.dataTransfer) {
-          e.dataTransfer.effectAllowed = 'move';
-          // The payload is for other drop targets; our own handlers read _dragPaths,
-          // which survives even if the browser sanitises the text.
-          try { e.dataTransfer.setData('text/plain', paths.join('\n')); } catch (err) { /* ignore */ }
-        }
-      };
-      row.ondragend = () => {
-        this._dragPaths = null;
-        document.querySelectorAll('.ws-node.is-dragging, .ws-node.is-drop-target')
-          .forEach((el) => el.classList.remove('is-dragging', 'is-drop-target'));
-      };
-      row.ondragover = (e) => {
-        if (!this._dragPaths) return;
-        e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-        row.classList.add('is-drop-target');
-      };
-      row.ondragleave = () => row.classList.remove('is-drop-target');
-      row.ondrop = (e) => {
-        if (!this._dragPaths) return;
-        e.preventDefault();
-        row.classList.remove('is-drop-target');
-        this._moveInto(isDir ? path : parentOf(path));
-      };
+      // --- 拖动（指针事件，见 _pressRow）---
+      row.addEventListener('pointerdown', (e) => this._pressRow(e, node));
     }
 
     toggleDir(path) {
@@ -1366,6 +1457,123 @@
     }
 
     /** Move the current drag payload into `destDir`. */
+    // ---- 树里的拖动（指针事件） ------------------------------------------------
+
+    /**
+     * 按下某一行。真正开始拖要等指针移动超过阈值——否则每次单击都会被当成一次
+     * 移动尝试，那不是人想要的行为。
+     */
+    _pressRow(e, node) {
+      if (e.button !== 0) return;                 // 中键、右键不参与拖动
+      this.press = { path: node.path, isDir: node.isDir, x: e.clientX, y: e.clientY };
+      const onMove = (ev) => this._dragMove(ev);
+      const onUp = (ev) => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
+        this._dragUp(ev);
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
+    }
+
+    _dragMove(e) {
+      const st = this.press;
+      if (!st) return;
+      if (!this._dragPaths) {
+        if (Math.abs(e.clientX - st.x) < DRAG_THRESHOLD
+          && Math.abs(e.clientY - st.y) < DRAG_THRESHOLD) return;
+        // 拖的是选中集合里的一个，就把整批都带走——和资源管理器一致。
+        this._dragPaths = this.selection.has(st.path) ? [...this.selection] : [st.path];
+        this._markDragging(this._dragPaths);
+        document.body.classList.add('ws-dragging');
+        this._showGhost(this._dragPaths.length > 1
+          ? `${this._dragPaths.length} 个项目`
+          : baseName(st.path));
+      }
+      this._moveGhost(e);
+      this._highlightDropTarget(e);
+    }
+
+    async _dragUp(e) {
+      const st = this.press;
+      this.press = null;
+      const paths = this._dragPaths;
+      this._dragPaths = null;
+      this._clearDragVisuals();
+      if (!st || !paths) return;                  // 没越过阈值：这是一次普通单击
+      this._justDragged = true;
+      const target = this._dropTargetAt(e);
+      if (!target) return;                        // 松手在树外面：当作放弃
+      this._dragPaths = paths;
+      await this._moveInto(target);
+    }
+
+    _markDragging(paths) {
+      const set = new Set(paths);
+      document.querySelectorAll('.ws-node[data-path]').forEach((el) => {
+        el.classList.toggle('is-dragging', set.has(el.getAttribute('data-path')));
+      });
+    }
+
+    _clearDragVisuals() {
+      this._hideGhost();
+      document.body.classList.remove('ws-dragging');
+      document.querySelectorAll('.ws-node.is-dragging, .ws-node.is-drop-target')
+        .forEach((el) => el.classList.remove('is-dragging', 'is-drop-target'));
+    }
+
+    _showGhost(label) {
+      let ghost = this._ghost;
+      if (!ghost) {
+        ghost = document.createElement('div');
+        ghost.className = 'ws-drag-ghost';
+        document.body.appendChild(ghost);
+        this._ghost = ghost;
+      }
+      ghost.textContent = label;
+      ghost.hidden = false;
+    }
+
+    _moveGhost(e) {
+      if (!this._ghost || this._ghost.hidden) return;
+      this._ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY + 10}px)`;
+    }
+
+    _hideGhost() {
+      if (this._ghost) this._ghost.hidden = true;
+    }
+
+    /** 落点：文件夹行 → 放进它；文件行 → 放进它所在目录；树的空白 → 根目录。 */
+    _dropTargetAt(e) {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el) return null;
+      const row = el.closest ? el.closest('.ws-node[data-path]') : null;
+      if (row) {
+        const path = row.getAttribute('data-path');
+        const node = (this._visible || []).find((n) => n.path === path);
+        const isDir = node ? node.isDir : row.classList.contains('is-dir');
+        return isDir ? path : parentOf(path);
+      }
+      const tree = document.getElementById('wsTree');
+      return tree && tree.contains(el) ? this.rootPath : null;
+    }
+
+    _highlightDropTarget(e) {
+      const target = this._dropTargetAt(e);
+      const tree = document.getElementById('wsTree');
+      if (!tree) return;
+      const rows = [...tree.querySelectorAll('.ws-node[data-path]')];
+      rows.forEach((el) => {
+        if (el.getAttribute('data-path') !== target) el.classList.remove('is-drop-target');
+      });
+      // 空白处（根目录）不画高亮：整棵树都算落点，没有哪一行可以标。
+      const hit = rows.find((el) => el.getAttribute('data-path') === target
+        && el.classList.contains('is-dir'));
+      if (hit) hit.classList.add('is-drop-target');
+    }
+
     async _moveInto(destDir) {
       const paths = (this._dragPaths || []).slice();
       this._dragPaths = null;
@@ -1634,11 +1842,40 @@
 
     // ---- DOM -----------------------------------------------------------------
 
+    /**
+     * 两种形态共用一套标签页逻辑，差别只在左边有没有文件树：
+     *   desktop —— 有原生文件系统，标签页 + 文件树 + 写回；
+     *   web     —— 只有标签页。浏览器里没有可写回的目录，硬塞一棵树只是摆设。
+     */
     _buildDom() {
-      if (document.getElementById('workspacePanel')) return;
+      if (document.getElementById('workspaceTabs')) return;
       const pane = document.getElementById('editorPane');
       if (!pane) return;
 
+      const tabs = document.createElement('div');
+      tabs.id = 'workspaceTabs';
+      tabs.className = 'ws-tabs';
+      pane.insertBefore(tabs, pane.firstChild);
+
+      if (this.isDesktop) {
+        this._buildExplorer(pane);
+        this._buildDropHint(pane);
+      }
+
+      this._buildWatermark(pane);
+
+      // Ctrl+W 关标签页、Ctrl+B 收侧栏、中键关标签页都在各自的绑定里。
+      window.addEventListener('keydown', (e) => this._onGlobalKey(e));
+
+      document.documentElement.classList.add('has-workspace');
+      if (this.isDesktop) {
+        document.documentElement.classList.add('ws-desktop');
+        this._applyCollapsed();
+      }
+    }
+
+    /** 左侧文件树 + 最近打开 + 宽度调节。只有能读写磁盘时才有意义。 */
+    _buildExplorer(pane) {
       const panel = document.createElement('aside');
       panel.id = 'workspacePanel';
       panel.className = 'workspace-panel';
@@ -1649,13 +1886,17 @@
           <button class="ws-btn" id="wsNewDir" title="新建文件夹"></button>
           <button class="ws-btn" id="wsRefresh" title="刷新"></button>
           <button class="ws-btn" id="wsMore" title="更多操作">⋯</button>
+          <button class="ws-btn" id="wsCollapse" title="收起侧栏（Ctrl+B）"></button>
         </div>
         <div class="ws-filter-row">
           <input type="text" id="wsFilter" class="ws-filter" placeholder="按文件名过滤" spellcheck="false" autocomplete="off">
         </div>
         <div class="ws-tree" id="wsTree" tabindex="0" role="tree" aria-label="文件树"></div>
         <div class="ws-sec">最近打开</div>
-        <div class="ws-recent" id="wsRecent"></div>`;
+        <div class="ws-recent" id="wsRecent"></div>
+        <div class="ws-rail">
+          <button class="ws-btn" id="wsExpand" title="展开侧栏（Ctrl+B）"></button>
+        </div>`;
       pane.parentNode.insertBefore(panel, pane);
 
       // The drag handle is a flex item between the panel and the editor, not a child
@@ -1667,34 +1908,6 @@
       resizer.title = '拖动调整宽度，双击复位';
       pane.parentNode.insertBefore(resizer, pane);
 
-      const tabs = document.createElement('div');
-      tabs.id = 'workspaceTabs';
-      tabs.className = 'ws-tabs';
-      pane.insertBefore(tabs, pane.firstChild);
-
-      // 空状态浮层。挂在 .editor-wrapper 上（它是 position: relative），这样只盖住
-      // 编辑区正文，不挡上面的文件名与查找栏。内容是写死的字面量，没有插值。
-      const wrapper = pane.querySelector('.editor-wrapper');
-      if (wrapper) {
-        const mark = document.createElement('div');
-        mark.id = 'wsWatermark';
-        mark.className = 'ws-watermark';
-        mark.hidden = true;
-        mark.innerHTML = `
-          <div class="ws-watermark-icon"></div>
-          <div class="ws-watermark-title">没有打开的文件</div>
-          <div class="ws-watermark-actions">
-            <button type="button" class="ws-watermark-btn" id="wsWmNew">新建文件</button>
-            <button type="button" class="ws-watermark-btn" id="wsWmOpenFile">打开文件…</button>
-            <button type="button" class="ws-watermark-btn" id="wsWmOpenDir">打开文件夹…</button>
-          </div>
-          <div class="ws-watermark-hint">在左侧文件树里单击文件即可打开，<kbd>Ctrl</kbd>+<kbd>S</kbd> 写回原文件</div>`;
-        mark.querySelector('.ws-watermark-icon').appendChild(makeIcon('doc', null, 'ws-svg-watermark'));
-        mark.querySelector('#wsWmNew').onclick = () => this.newTab();
-        mark.querySelector('#wsWmOpenFile').onclick = () => this.openFileDialog();
-        mark.querySelector('#wsWmOpenDir').onclick = () => this.openFolderDialog();
-        wrapper.appendChild(mark);
-      }
 
       // Toolbar icons: same SVG factory as the tree, so the panel has one visual voice.
       document.getElementById('wsNewFile').appendChild(makeIcon('newFile', null, 'ws-svg-btn'));
@@ -1713,8 +1926,17 @@
           { label: '新建标签页', action: () => this.newTab() },
           { label: '刷新', action: () => this.refresh() },
           { label: '全部折叠', action: () => this.collapseAll() },
+          { sep: true },
+          { label: '收起侧栏', action: () => this.toggleCollapsed(true) },
         ]);
       };
+
+      const collapseBtn = document.getElementById('wsCollapse');
+      collapseBtn.appendChild(makeIcon('collapse', null, 'ws-svg-btn'));
+      collapseBtn.onclick = () => this.toggleCollapsed(true);
+      const expandBtn = document.getElementById('wsExpand');
+      expandBtn.appendChild(makeIcon('expand', null, 'ws-svg-btn'));
+      expandBtn.onclick = () => this.toggleCollapsed(false);
 
       const filter = document.getElementById('wsFilter');
       let debounce = null;
@@ -1741,22 +1963,199 @@
         e.preventDefault();
         this._showMenu(e.clientX, e.clientY, this._menuItemsFor(null));
       };
-      // Dropping on the blank area means "move to the workspace root".
-      tree.ondragover = (e) => {
-        if (!this._dragPaths || e.target !== tree) return;
-        e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-      };
-      tree.ondrop = (e) => {
-        if (!this._dragPaths || e.target !== tree) return;
-        e.preventDefault();
-        this._moveInto(this.rootPath);
-      };
+      // 空白处的落点由指针逻辑处理（_dropTargetAt 把树里的空白当根目录）。
 
       this._bindResizer(panel, resizer);
       const stored = Number(global.localStorage && global.localStorage.getItem(WIDTH_KEY));
       if (stored) panel.style.flexBasis = `${Math.min(WIDTH_MAX, Math.max(WIDTH_MIN, stored))}px`;
-      document.documentElement.classList.add('has-workspace');
+    }
+
+    /**
+     * 空状态浮层。挂在 .editor-wrapper 上（它是 position: relative），这样只盖住
+     * 编辑区正文，不挡上面的文件名与查找栏。内容是写死的字面量，没有插值。
+     *
+     * 两种形态的按钮不一样：网页版没有文件夹可开，保存也只是下载一份副本，所以
+     * 提示文案得说实话，不能照抄桌面版。
+     */
+    _buildWatermark(pane) {
+      const wrapper = pane.querySelector('.editor-wrapper');
+      if (!wrapper) return;
+      const mark = document.createElement('div');
+      mark.id = 'wsWatermark';
+      mark.className = 'ws-watermark';
+      mark.hidden = true;
+      mark.innerHTML = `
+        <div class="ws-watermark-icon"></div>
+        <div class="ws-watermark-title">没有打开的文件</div>
+        <div class="ws-watermark-actions">
+          <button type="button" class="ws-watermark-btn" id="wsWmNew">新建文件</button>
+          <button type="button" class="ws-watermark-btn" id="wsWmOpenFile">打开文件…</button>
+          ${this.isDesktop ? '<button type="button" class="ws-watermark-btn" id="wsWmOpenDir">打开文件夹…</button>' : ''}
+        </div>
+        <div class="ws-watermark-hint">${this.isDesktop
+          ? '在左侧文件树里单击文件即可打开，<kbd>Ctrl</kbd>+<kbd>S</kbd> 写回原文件'
+          : '拖入或打开本地文件即可开始；网页版的保存是下载一份副本'}</div>`;
+      mark.querySelector('.ws-watermark-icon').appendChild(makeIcon('doc', null, 'ws-svg-watermark'));
+      mark.querySelector('#wsWmNew').onclick = () => this.newTab();
+      mark.querySelector('#wsWmOpenFile').onclick = () => this.openFileDialog();
+      const dirBtn = mark.querySelector('#wsWmOpenDir');
+      if (dirBtn) dirBtn.onclick = () => this.openFolderDialog();
+      wrapper.appendChild(mark);
+    }
+
+    // ---- 收起 / 展开侧栏 ------------------------------------------------------
+
+    /**
+     * 折叠左侧文件树。编辑的时候横向空间经常不够用，而文件树多数时候只是"偶尔
+     * 瞟一眼"——收起来留一条窄轨道，比每次去拖宽度方便。
+     */
+    toggleCollapsed(next) {
+      if (!this.isDesktop) return false;
+      this.collapsed = typeof next === 'boolean' ? next : !this.collapsed;
+      this._writeFlag(COLLAPSED_KEY, this.collapsed);
+      this._applyCollapsed();
+      return this.collapsed;
+    }
+
+    _applyCollapsed() {
+      const panel = document.getElementById('workspacePanel');
+      if (!panel) return;
+      const collapsed = this.collapsed;
+      panel.classList.toggle('is-collapsed', collapsed);
+      const resizer = document.querySelector('.ws-resizer');
+      if (resizer) resizer.hidden = collapsed;
+      if (collapsed) {
+        // 记住折叠前的宽度，展开时回到原样，而不是回到默认值。
+        const w = parseInt(panel.style.flexBasis, 10)
+          || Math.round(panel.getBoundingClientRect().width);
+        if (w > WIDTH_MIN) this._widthBeforeCollapse = w;
+        panel.style.flexBasis = `${RAIL_W}px`;
+      } else if (this._widthBeforeCollapse) {
+        panel.style.flexBasis = `${this._widthBeforeCollapse}px`;
+      }
+    }
+
+    // ---- 全局快捷键 ----------------------------------------------------------
+
+    _onGlobalKey(e) {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod || e.altKey) return;
+      const key = (e.key || '').toLowerCase();
+      if (key === 'w') {
+        // 桌面版由这里接管；网页版里 Ctrl+W 归浏览器管（页面收不到），中键仍然可用。
+        e.preventDefault();
+        this.closeTab(this.active);
+        return;
+      }
+      // Ctrl+B 在编辑区里是加粗（洛谷的快捷键），所以只有焦点不在编辑区时才当
+      // "收起侧栏"用，免得不小心把用户的加粗习惯改掉。
+      if (key === 'b' && this.isDesktop) {
+        if (document.activeElement === document.getElementById('editorTextarea')) return;
+        e.preventDefault();
+        this.toggleCollapsed();
+      }
+    }
+
+    // ---- 拖进来的文件（桌面版） ------------------------------------------------
+
+    /** 拖到窗口上时的提示层：OS 的拖放没有 HTML5 的 dragover，得自己报个数。 */
+    _buildDropHint(pane) {
+      const hint = document.createElement('div');
+      hint.id = 'wsDropHint';
+      hint.className = 'ws-drop-hint';
+      hint.hidden = true;
+      hint.innerHTML = '<div class="ws-drop-hint-box">松开即可打开</div>';
+      pane.appendChild(hint);
+    }
+
+    _showDropHint(on) {
+      const hint = document.getElementById('wsDropHint');
+      if (hint) hint.hidden = !on;
+    }
+
+    /**
+     * 桌面版接管 OS 的文件拖放。
+     *
+     * 为什么不用 HTML5 的 drop：WebView 只给内容（File 对象），不给路径——`.path` 是
+     * Electron 才有的东西。于是拖进来的文件在面板里是一份"没有出处"的文档，Ctrl+S
+     * 只能另存为，这正是用户报的那个问题。Tauri 的原生事件直接给绝对路径，拖进来的
+     * 文件就和从文件树打开的一样：能写回、进最近打开、标题带路径。
+     *
+     * 代价写在 tauri.conf.json 的 dragDropEnabled 旁边：Windows 上 WebView 里的 HTML5
+     * 拖放会被原生处理器顶掉，所以文件树内部的拖动改用指针事件（见 _pressRow）。
+     */
+    async _bindNativeDrop() {
+      if (!this.isDesktop) return;
+      const t = global.__TAURI__;
+      if (!t) return;
+      const onEvent = (ev) => {
+        const payload = ev && ev.payload ? ev.payload : ev;
+        if (!payload) return;
+        const type = payload.type || 'drop';
+        if (type === 'enter' || type === 'over') { this._showDropHint(true); return; }
+        if (type === 'leave') { this._showDropHint(false); return; }
+        if (type !== 'drop') return;
+        this._showDropHint(false);
+        const paths = (payload.paths || []).filter((x) => typeof x === 'string' && x);
+        if (paths.length) this._openDroppedPaths(paths);
+      };
+      const routes = [
+        () => t.webviewWindow && t.webviewWindow.getCurrentWebviewWindow
+          && t.webviewWindow.getCurrentWebviewWindow().onDragDropEvent(onEvent),
+        () => t.webview && t.webview.getCurrentWebview
+          && t.webview.getCurrentWebview().onDragDropEvent(onEvent),
+        () => t.event && t.event.listen && t.event.listen('tauri://drag-drop', (e) => onEvent({
+          payload: { type: 'drop', paths: (e && e.payload && e.payload.paths) || [] },
+        })),
+      ];
+      for (const route of routes) {
+        try {
+          const un = await route();
+          if (typeof un === 'function') {
+            this.nativeDrop = true;
+            this._dropUnlisten = un;
+            return;
+          }
+        } catch (e) { /* 换下一条路 */ }
+      }
+    }
+
+    /** 拖进来的东西：文件开成标签页，文件夹问一句要不要当工作目录。 */
+    async _openDroppedPaths(paths) {
+      const list = paths.slice(0, MAX_DROP);
+      if (paths.length > list.length) {
+        this._toast(`一次最多打开 ${MAX_DROP} 个，其余的已忽略`, 'info');
+      }
+      let opened = 0;
+      for (const path of list) {
+        const name = baseName(path);
+        const kind = classifyFile(name);
+        // 先看扩展名，再探目录。反过来（拿 readDir 当第一判据）会让"readDir 不报错"
+        // 的宿主把每个文件都当成文件夹——探针只能证真，不能证伪。
+        const isDir = kind === 'text' ? await this._isDirPath(path) : false;
+        if (isDir) {
+          const ok = !this.rootPath || await this.fs.confirm(
+            `把左侧的工作目录换成「${name}」吗？`,
+            { title: '打开文件夹', okLabel: '打开', cancelLabel: '取消' },
+          );
+          if (ok) { await this.setRoot(path); opened += 1; }
+          continue;
+        }
+        if (kind === 'binary') {
+          this._toast(`无法打开「${name}」：不是文本文件`, 'error');
+          continue;
+        }
+        await this.openPath(path);
+        opened += 1;
+      }
+      if (!opened) return;
+      this._toast(opened === 1 ? '已打开 1 个文件' : `已打开 ${opened} 个项目`, 'success');
+    }
+
+    /** 拿 readDir 当"这是不是文件夹"的探针：成功就是文件夹。 */
+    async _isDirPath(path) {
+      if (!this.fs || !this.fs.readDir) return false;
+      try { await this.fs.readDir(path); return true; } catch (e) { return false; }
     }
 
     _bindResizer(panel, handle) {
@@ -1809,8 +2208,13 @@
         close.onclick = (e) => { e.stopPropagation(); this.closeTab(i); };
         el.appendChild(close);
         el.onclick = () => this.activate(i);
+        // 中键关闭：浏览器和 VS Code 的老规矩。mousedown 那一下的 preventDefault
+        // 是为了挡掉 Linux 上中键默认的"自动滚动"。
+        el.addEventListener('mousedown', (ev) => { if (ev.button === 1) ev.preventDefault(); });
+        el.addEventListener('auxclick', (ev) => { if (ev.button === 1) this.closeTab(i); });
         bar.appendChild(el);
       });
+      this._scheduleWebPersist();
     }
 
     renderRecent() {

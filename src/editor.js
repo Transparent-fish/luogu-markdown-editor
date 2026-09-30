@@ -281,6 +281,9 @@ const safeStorage = {
       window.addEventListener('dragover', (e) => e.preventDefault());
       window.addEventListener('drop', (e) => {
         e.preventDefault();
+        // 桌面版：OS 的文件拖放由工作区接管（Tauri 的原生事件带绝对路径，拖进来的
+        // 文件因此能写回原文件）。HTML5 这条留给网页版——浏览器里没有别的路可走。
+        if (this.workspace && this.workspace.nativeDrop) return;
         const files = e.dataTransfer && e.dataTransfer.files;
         if (!files || files.length === 0) return;
 

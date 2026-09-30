@@ -3291,6 +3291,8 @@ body.ws-resizing * { cursor: col-resize !important; }
   display: flex;
   align-items: center;
   gap: 5px;
+  user-select: none;   /* 指针拖动时不要顺手选中一排文件名 */
+  -webkit-user-select: none;
   height: var(--ws-row-h);
   padding: 0 6px;
   border-radius: 4px;
@@ -3425,9 +3427,11 @@ body.ws-resizing * { cursor: col-resize !important; }
 .ws-menu-sep { height: 1px; margin: 4px 6px; background: var(--border-color); }
 
 /* 只在桌面版（有文件树）出现的控件。 */
-.ws-only { display: none !important; }
-.has-workspace .dropdown-item.ws-only { display: flex !important; }
-.has-workspace .status-item.ws-only { display: flex !important; }
+/* 只在桌面版出现的控件：写回磁盘、自动保存、保存时排版。网页版现在也有标签页
+   （has-workspace 对它同样成立），但这些功能在那儿没有依据，所以按 ws-desktop 判。 */
+.ws-desktop-only { display: none !important; }
+html.ws-desktop .dropdown-item.ws-desktop-only { display: flex !important; }
+html.ws-desktop .status-item.ws-desktop-only { display: flex !important; }
 
 /* "是否保存更改？" 三选一对話框：保存 / 不保存 / 取消。
    宿主自带的 confirm 只有两个按钮，缺的正是最常用的那个"保存"。 */
@@ -3460,6 +3464,81 @@ body.ws-resizing * { cursor: col-resize !important; }
 .ws-ask-btn.is-danger { color: var(--luogu-red); }
 .ws-ask-btn.is-danger:hover { border-color: var(--luogu-red); background: var(--luogu-red-light); }
 .ws-ask-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+
+
+/* --- 收起后的侧栏 ---
+   宽度由 JS 直接写在 style 上（宽度本来就是内联设置的，类选择器压不过它），
+   这里只负责把面板里的东西藏起来、把轨道露出来。 */
+.workspace-panel.is-collapsed {
+  /* min-width 会把 flex-basis 顶回去（宽度取两者中更大的），收起时必须让开。 */
+  padding: 0;
+  min-width: 0;
+  max-width: none;
+}
+.workspace-panel.is-collapsed .ws-head,
+.workspace-panel.is-collapsed .ws-filter-row,
+.workspace-panel.is-collapsed .ws-tree,
+.workspace-panel.is-collapsed .ws-sec,
+.workspace-panel.is-collapsed .ws-recent { display: none; }
+.ws-rail { display: none; }
+.workspace-panel.is-collapsed .ws-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  width: 100%;
+}
+
+/* --- 拖动时跟着指针的小标签 ---
+   fixed + transform：拖动过程中只改 transform，不触发布局。 */
+.ws-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9000;
+  pointer-events: none;
+  max-width: 240px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 3px 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-focus);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+}
+body.ws-dragging { user-select: none; }
+body.ws-dragging,
+body.ws-dragging * { cursor: grabbing !important; }
+
+/* --- 把文件拖到窗口上时的提示层（桌面版的原生拖放） --- */
+.ws-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(127, 127, 127, .16);
+  border: 2px dashed var(--luogu-blue);
+  border-radius: 6px;
+}
+/* [hidden] 只是 UA 样式表里的 display:none，压不过上面写死的 display:flex。 */
+.ws-drop-hint[hidden],
+.ws-drag-ghost[hidden] { display: none !important; }
+.ws-drop-hint-box {
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+}
 
 /* --- empty state: no file open ------------------------------------------------
    Shown when the last tab is closed. The textarea is made read-only at the same

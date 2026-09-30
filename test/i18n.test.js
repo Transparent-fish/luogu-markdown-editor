@@ -79,16 +79,7 @@ const keys = extractKeys();
 const KEEP_CHINESE_PREFIX = ['简体中文', '《洛谷基本规范第 3 条》', '洛谷渲染器基于 GFM'];
 const keepsChinese = (key) => KEEP_CHINESE_PREFIX.some((p) => key.startsWith(p));
 
-/**
- * 挂账：两份"样张"模板的正文还没翻（demo 演示洛谷中文语法全特性、CSP-J 2025 试题册
- * 是 CCF 的中文试卷样例）。它们整篇就是中文内容文档，翻成英文会变成另一份东西，
- * 所以要等用户确认口径 —— 挂在这里，免得守卫测试假装它们是已完成的。
- */
-const PENDING_TEMPLATE_PREFIX = [
-  '# 洛谷 Markdown 格式与 KaTeX 公式全特性演示',
-  ':::Header[CSP-J 2025 第二轮认证 入门级]',
-];
-const pending = (key) => PENDING_TEMPLATE_PREFIX.some((p) => key.startsWith(p));
+
 
 test('词典非空，且没有多余条目', () => {
   assert.ok(Object.keys(EN).length > 500, `词典只有 ${Object.keys(EN).length} 条，疑似没加载`);
@@ -97,7 +88,7 @@ test('词典非空，且没有多余条目', () => {
 });
 
 test('每个键都有英文，英文模式下不会漏出中文', () => {
-  const missing = [...keys.keys()].filter((k) => !(k in EN) && !pending(k));
+  const missing = [...keys.keys()].filter((k) => !(k in EN));
   assert.deepStrictEqual(missing, [], `这些键没有英文：\n  ${missing.slice(0, 20).join('\n  ')}`);
 });
 
@@ -118,10 +109,14 @@ test('英文值里不该残留中文（代码示例与数学排除在外）', ()
 });
 
 test('插值占位符在译文里一个都不能少', () => {
-  const placeholders = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+  // 只要求"键里的占位符，译文里都得在"：反过来（译文多出 {and} 这种）不算错 ——
+  // 模板与公式里 \text{and}、\begin{cases} 的花括号都会被这个正则看见，那不是占位符。
+  // 只看"以字母开头的"占位符：公式里的 {2}、{cases} 之类是 LaTeX 花括号，
+  // 插值函数不会碰它们（只有 vars 里给了值才替换），不该拿它们判错。
+  const placeholders = (s) => [...new Set([...s.matchAll(/\{([A-Za-z]\w*)\}/g)].map((m) => m[1]))].sort();
   const broken = Object.entries(EN)
     .map(([k, v]) => [k, placeholders(k), placeholders(v)])
-    .filter(([, want, got]) => want.join() !== got.join());
+    .filter(([, want, got]) => !want.every((w) => got.includes(w)));
   assert.deepStrictEqual(
     broken.map(([k, want, got]) => `${k} [${want}] → [${got}]`),
     [],

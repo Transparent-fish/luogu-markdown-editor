@@ -60,6 +60,9 @@ const SNAP = `(function(root){
   const errs = [];
   p.on('pageerror', (e) => errs.push(e.message));
   await p.goto(url, { waitUntil: 'networkidle' });
+  // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+  // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+  await p.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
   await p.evaluate((v) => {
     const ta = document.getElementById('editorTextarea');
     ta.value = v; ta.dispatchEvent(new Event('input', { bubbles: true }));
@@ -147,6 +150,9 @@ const SNAP = `(function(root){
     };
     const pg=await b.newPage({viewport:{width:1000,height:800}});
     await pg.goto(url,{waitUntil:'networkidle'});
+    // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+    // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+    await pg.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
     await pg.evaluate((v)=>{const ta=document.getElementById('editorTextarea');
       ta.value=v;ta.dispatchEvent(new Event('input',{bubbles:true}));
       LuoguEditor.render();LuoguEditor.setViewMode('preview');},MD);
@@ -254,6 +260,9 @@ const SNAP = `(function(root){
     // 标题少于两个时不显示目录
     const pg2=await b.newPage({viewport:{width:1600,height:800}});
     await pg2.goto(url,{waitUntil:'networkidle'});
+    // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+    // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+    await pg2.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
     await pg2.evaluate(()=>{const ta=document.getElementById('editorTextarea');
       ta.value='# 只有一个标题\n\n正文。';ta.dispatchEvent(new Event('input',{bubbles:true}));
       LuoguEditor.render();LuoguEditor.setViewMode('preview');});

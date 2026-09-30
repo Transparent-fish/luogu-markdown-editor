@@ -33,6 +33,9 @@ const DOC = [
   // window.print() 在无头浏览器里不会弹框，但打桩更稳，也顺带记下调用次数。
   await p.addInitScript(() => { window.__PRINTS = 0; window.print = () => { window.__PRINTS += 1; }; });
   await p.goto(APP, { waitUntil: 'networkidle' });
+  // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+  // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+  await p.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
   await p.waitForTimeout(800);
   await p.evaluate((doc) => { LuoguEditor.setContent(doc, false); }, DOC.replace(/\\n/g, '\n'));
   await p.waitForTimeout(400);

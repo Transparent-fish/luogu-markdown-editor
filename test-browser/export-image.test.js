@@ -35,6 +35,9 @@ const fs = require('fs');
 
   // 拦截下载，拿到 PNG 字节
   await p.goto(APP, { waitUntil: 'networkidle' });
+  // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+  // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+  await p.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
   await p.evaluate(() => {
     window.__caught = null;
     window.__all = [];

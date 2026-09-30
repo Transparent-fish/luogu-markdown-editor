@@ -611,9 +611,9 @@
             <h3 class="ws-ask-title" id="wsAskTitle"></h3>
             <p class="ws-ask-body"></p>
             <div class="ws-ask-buttons">
-              <button type="button" class="ws-ask-btn is-primary" data-act="save">保存</button>
-              <button type="button" class="ws-ask-btn is-danger" data-act="discard">不保存</button>
-              <button type="button" class="ws-ask-btn" data-act="cancel">取消</button>
+              <button type="button" class="ws-ask-btn is-primary" data-act="save">${T('保存')}</button>
+              <button type="button" class="ws-ask-btn is-danger" data-act="discard">${T('不保存')}</button>
+              <button type="button" class="ws-ask-btn" data-act="cancel">${T('取消')}</button>
             </div>
           </div>`;
         // 文件名来自磁盘，用 textContent 写入，不做字符串拼接。
@@ -715,7 +715,7 @@
      * editor.saveMarkdownFile() 又会回头调用工作区，转成死循环。
      */
     async _saveThroughEditor(i, d) {
-      if (i !== this.active) { this._toast('请先切换到该标签页再保存', 'info'); return false; }
+      if (i !== this.active) { this._toast(T('请先切换到该标签页再保存'), 'info'); return false; }
       const editor = this.editor;
       const own = editor.workspace;
       editor.workspace = null;
@@ -1333,9 +1333,9 @@
     /** Reject names no filesystem will take, before asking the host and getting an error. */
     _checkName(name) {
       if (!name) return T('名字不能为空');
-      if (BAD_NAME.test(name)) return '名字里不能包含 \\ / : * ? " < > |';
-      if (/^\.+$/.test(name)) return '这个名字不可用';
-      if (name.endsWith(' ') || name.endsWith('.')) return '名字不能以空格或点结尾';
+      if (BAD_NAME.test(name)) return T('名字里不能包含 \\ / : * ? " < > |');
+      if (/^\.+$/.test(name)) return T('这个名字不可用');
+      if (name.endsWith(' ') || name.endsWith('.')) return T('名字不能以空格或点结尾');
       return null;
     }
 
@@ -1460,7 +1460,9 @@
       this.focusPath = null;
       await this.render();
       if (failed.length) this._toast(T('部分删除失败：{a}', { a: failed.join('；') }), 'error');
-      else this._toast(targets.length === 1 ? `已删除「${names[0]}」` : `已删除 ${targets.length} 个项目`, 'success');
+      else this._toast(targets.length === 1
+        ? T('已删除「{a}」', { a: names[0] })
+        : T('已删除 {n} 个项目', { n: targets.length }), 'success');
     }
 
     /** Move the current drag payload into `destDir`. */
@@ -1610,7 +1612,7 @@
       this.treeState[destDir] = true;
       await this.render();
       if (moved) {
-        this._toast(moved === 1 ? '已移动 1 个项目' : `已移动 ${moved} 个项目`, 'success');
+        this._toast(T('已移动 {n} 个项目', { n: moved }), 'success');
       }
       if (skipped.length) this._toast(T('跳过：{a}', { a: skipped.join('；') }), 'error');
     }
@@ -1888,21 +1890,21 @@
       panel.className = 'workspace-panel';
       panel.innerHTML = `
         <div class="ws-head">
-          <span class="ws-title">资源管理器</span>
-          <button class="ws-btn" id="wsNewFile" title="新建文件"></button>
-          <button class="ws-btn" id="wsNewDir" title="新建文件夹"></button>
-          <button class="ws-btn" id="wsRefresh" title="刷新"></button>
-          <button class="ws-btn" id="wsMore" title="更多操作">⋯</button>
-          <button class="ws-btn" id="wsCollapse" title="收起侧栏（Ctrl+B）"></button>
+          <span class="ws-title">${T('资源管理器')}</span>
+          <button class="ws-btn" id="wsNewFile" title="${T('新建文件')}"></button>
+          <button class="ws-btn" id="wsNewDir" title="${T('新建文件夹')}"></button>
+          <button class="ws-btn" id="wsRefresh" title="${T('刷新')}"></button>
+          <button class="ws-btn" id="wsMore" title="${T('更多操作')}">⋯</button>
+          <button class="ws-btn" id="wsCollapse" title="${T('收起侧栏（Ctrl+B）')}"></button>
         </div>
         <div class="ws-filter-row">
-          <input type="text" id="wsFilter" class="ws-filter" placeholder="按文件名过滤" spellcheck="false" autocomplete="off">
+          <input type="text" id="wsFilter" class="ws-filter" placeholder="${T('按文件名过滤')}" spellcheck="false" autocomplete="off">
         </div>
-        <div class="ws-tree" id="wsTree" tabindex="0" role="tree" aria-label="文件树"></div>
-        <div class="ws-sec">最近打开</div>
+        <div class="ws-tree" id="wsTree" tabindex="0" role="tree" aria-label="${T('文件树')}"></div>
+        <div class="ws-sec">${T('最近打开')}</div>
         <div class="ws-recent" id="wsRecent"></div>
         <div class="ws-rail">
-          <button class="ws-btn" id="wsExpand" title="展开侧栏（Ctrl+B）"></button>
+          <button class="ws-btn" id="wsExpand" title="${T('展开侧栏（Ctrl+B）')}"></button>
         </div>`;
       pane.parentNode.insertBefore(panel, pane);
 
@@ -1993,10 +1995,10 @@
       mark.hidden = true;
       mark.innerHTML = `
         <div class="ws-watermark-icon"></div>
-        <div class="ws-watermark-title">没有打开的文件</div>
+        <div class="ws-watermark-title">${T('没有打开的文件')}</div>
         <div class="ws-watermark-actions">
-          <button type="button" class="ws-watermark-btn" id="wsWmNew">新建文件</button>
-          <button type="button" class="ws-watermark-btn" id="wsWmOpenFile">打开文件…</button>
+          <button type="button" class="ws-watermark-btn" id="wsWmNew">${T('新建文件')}</button>
+          <button type="button" class="ws-watermark-btn" id="wsWmOpenFile">${T('打开文件…')}</button>
           ${this.isDesktop ? T('<button type="button" class="ws-watermark-btn" id="wsWmOpenDir">打开文件夹…</button>') : ''}
         </div>
         <div class="ws-watermark-hint">${this.isDesktop
@@ -2156,7 +2158,7 @@
         opened += 1;
       }
       if (!opened) return;
-      this._toast(opened === 1 ? '已打开 1 个文件' : `已打开 ${opened} 个项目`, 'success');
+      this._toast(T('已打开 {n} 个项目', { n: opened }), 'success');
     }
 
     /** 拿 readDir 当"这是不是文件夹"的探针：成功就是文件夹。 */

@@ -467,7 +467,7 @@ const safeStorage = {
       if (typeof this.renderMathCheatsheet === 'function') this.renderMathCheatsheet();
       if (typeof this.applyLintDisplay === 'function') this.applyLintDisplay();
       if (typeof this.updateStatusBar === 'function') this.updateStatusBar();
-      this.showToast(lang === 'zh' ? '界面语言：简体中文' : 'Interface language: English', 'success');
+      this.showToast(lang === 'zh' ? T('界面语言：简体中文') : T('Interface language: English'), 'success');
       return lang;
     }
 
@@ -2029,7 +2029,7 @@ const safeStorage = {
     }
 
     insertAlign(mode) {
-      this.insertAtCursor(`\n\n:::align{${mode}}\n这里是${mode === 'center' ? '居中' : '居右'}排版的内容\n:::\n\n`);
+      this.insertAtCursor(T('\n\n:::align{{mode}}\n这里是{a}排版的内容\n:::\n\n', { mode, a: mode === 'center' ? T('居中') : T('居右') }));
     }
 
     // ---- Paging markers ------------------------------------------------------
@@ -2372,8 +2372,8 @@ const safeStorage = {
         container.innerHTML = `
           <div style="text-align:center; padding: 24px 0;">
             <div style="font-size: 42px; color: var(--luogu-green); margin-bottom: 8px;">✓</div>
-            <h4 style="color: var(--luogu-green); margin-bottom: 8px;">太棒了！排版完全符合洛谷规范</h4>
-            <p style="color: var(--text-secondary); font-size: 13px;">未检测到中英文缺少空格、裸露公式符号或代码块未指定语言等问题，可放心在洛谷发布！</p>
+            <h4 style="color: var(--luogu-green); margin-bottom: 8px;">${T('太棒了！排版完全符合洛谷规范')}</h4>
+            <p style="color: var(--text-secondary); font-size: 13px;">${T('未检测到中英文缺少空格、裸露公式符号或代码块未指定语言等问题，可放心在洛谷发布！')}</p>
           </div>
         `;
         return;
@@ -2381,9 +2381,9 @@ const safeStorage = {
 
       let html = `
         <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 6px;">
-          <strong>排版综合健康度评分：</strong>
-          <span style="font-size: 18px; font-weight: bold; color: ${result.score >= 90 ? 'var(--luogu-green)' : 'var(--luogu-orange)'};">${result.score} / 100 分</span>
-          <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">共发现 ${result.issues.length} 处建议改进项：</p>
+          <strong>${T('排版综合健康度评分：')}</strong>
+          <span style="font-size: 18px; font-weight: bold; color: ${result.score >= 90 ? 'var(--luogu-green)' : 'var(--luogu-orange)'};">${T('{score} / 100 分', { score: result.score })}</span>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">${T('共发现 {n} 处建议改进项：', { n: result.issues.length })}</p>
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px;">
       `;
@@ -2402,7 +2402,7 @@ const safeStorage = {
               <span style="font-weight: 600; font-size: 13px;">${escapeHtml(issue.title)}</span>
               <div>
                 <span style="font-size: 10px; padding: 1px 6px; border-radius: 3px; ${badgeColors[issue.type] || ''}">${typeLabels[issue.type] || issue.type}</span>
-                <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">第 ${issue.line} 行</span>
+                <span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">${T('第 {line} 行', { line: issue.line })}</span>
               </div>
             </div>
             <div style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(issue.message)}</div>
@@ -2426,7 +2426,7 @@ const safeStorage = {
         const row = [];
         for (let c = 0; c < cols; c++) {
           row.push({
-            text: r === 0 ? `标题 ${c + 1}` : `数据 ${r},${c + 1}`
+            text: r === 0 ? T('标题 {n}', { n: c + 1 }) : T('数据 {r},{c}', { r, c: c + 1 })
           });
         }
         this.tableGridData.push(row);
@@ -2451,8 +2451,8 @@ const safeStorage = {
               <input type="text" class="grid-cell-input" value="${escapeHtml(cell.text)}" onchange="LuoguEditor.updateTableCell(${r}, ${c}, this.value)" />
               ${!isHeader ? `
                 <div class="grid-cell-tools">
-                  <button type="button" class="btn-mini" onclick="LuoguEditor.updateTableCell(${r}, ${c}, '^')" title="向上合并 (^) ${r > 0 ? '' : T('(不可用)')}">^</button>
-                  <button type="button" class="btn-mini" onclick="LuoguEditor.updateTableCell(${r}, ${c}, '<')" title="向左合并 (<) ${c > 0 ? '' : T('(不可用)')}">&lt;</button>
+                  <button type="button" class="btn-mini" onclick="LuoguEditor.updateTableCell(${r}, ${c}, '^')" title="${T('向上合并 (^) {x}', { x: r > 0 ? '' : T('(不可用)') })}">^</button>
+                  <button type="button" class="btn-mini" onclick="LuoguEditor.updateTableCell(${r}, ${c}, '<')" title="${T('向左合并 (<) {x}', { x: c > 0 ? '' : T('(不可用)') })}">&lt;</button>
                 </div>
               ` : ''}
             </${tag}>
@@ -2486,7 +2486,7 @@ const safeStorage = {
       const c = this.tableGridData[0] ? this.tableGridData[0].length : 0;
       for (let r = 0; r < this.tableGridData.length; r++) {
         this.tableGridData[r].push({
-          text: r === 0 ? `标题 ${c + 1}` : `数据 ${r},${c + 1}`
+          text: r === 0 ? T('标题 {n}', { n: c + 1 }) : T('数据 {r},{c}', { r, c: c + 1 })
         });
       }
       this.renderTableBuilderGrid();
@@ -2750,7 +2750,7 @@ const safeStorage = {
         || /(?:^|[\s,>+~(])(?:pre|code)\[class\*=/.test(sel));
 
       const fullHtml = `<!DOCTYPE html>
-<html lang="zh-CN" data-theme="light">
+<html lang="${global.LuoguI18n && LuoguI18n.current() === 'en' ? 'en' : 'zh-CN'}" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3230,23 +3230,23 @@ const safeStorage = {
   </style>
 </head>
 <body>
-  <button class="toc-fab" id="tocFab" onclick="toggleToc()" aria-label="目录" title="目录">☰</button>
-  <nav class="article-toc" id="articleToc" aria-label="目录" hidden>
-    <div class="toc-title">目录</div>
+  <button class="toc-fab" id="tocFab" onclick="toggleToc()" aria-label="${T('目录')}" title="${T('目录')}">☰</button>
+  <nav class="article-toc" id="articleToc" aria-label="${T('目录')}" hidden>
+    <div class="toc-title">${T('目录')}</div>
     <ul class="toc-list" id="tocList"></ul>
   </nav>
   <div class="article-container">
     <div class="article-header">
       <div class="article-meta">
         <div class="meta-badges">
-          <span class="badge">洛谷 Markdown</span>
+          <span class="badge">${T('洛谷')} Markdown</span>
           <span>📅 ${nowStr}</span>
-          <span>📖 ${words} 字 (约 ${readTime} 分钟)</span>
-          <span>📐 ${formulas} 个公式</span>
+          <span>${T('📖 {words} 字（约 {min} 分钟）', { words, min: readTime })}</span>
+          <span>${T('📐 {n} 个公式', { n: formulas })}</span>
         </div>
         <div class="action-bar">
-          <button class="action-btn" onclick="toggleTheme()" title="切换亮暗主题">🌓 主题</button>
-          <button class="action-btn" onclick="copyFullContent()" title="复制全文 Markdown">📋 复制</button>
+          <button class="action-btn" onclick="toggleTheme()" title="${T('切换亮暗主题')}">🌓 ${T('主题')}</button>
+          <button class="action-btn" onclick="copyFullContent()" title="${T('复制全文 Markdown')}">📋 ${T('复制')}</button>
         </div>
       </div>
     </div>
@@ -3257,7 +3257,7 @@ const safeStorage = {
   </div>
 
   <textarea id="rawMarkdownSource" style="display:none;" readonly>${escapeHtml(markdown)}</textarea>
-  <div id="toastTip" class="toast-tip">已复制 Markdown 源码！</div>
+  <div id="toastTip" class="toast-tip">${T('已复制 Markdown 源码！')}</div>
 
   <script>
     // Bilibili players are loaded only on demand so an exported document stays

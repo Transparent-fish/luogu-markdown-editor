@@ -164,6 +164,14 @@ jobs:
       - name: Layout and print suite
         run: node test-browser/layout-print.test.js
 
+      # Bilingual UI, end to end: the browser reports en-US here, so this also pins the
+      # first-run default (follow the system language). It checks the text that is only
+      # produced while rendering — tab labels, status bar, the help manual, the formula
+      # cheatsheet (a load-time array, so switching has to rebuild it) and the lint
+      # report — then switches back to Chinese and checks the choice survives a reload.
+      - name: i18n suite
+        run: node test-browser/i18n.test.js
+
       # The workspace panel is desktop-only but ships in the same HTML, so this
       # guards both that it stays invisible in a browser and that it works when a
       # native filesystem is present (stubbed here — no Rust toolchain needed).

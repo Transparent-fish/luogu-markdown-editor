@@ -24,6 +24,9 @@ const { chromium } = require('playwright');
   const errs = [];
   p.on('pageerror', (e) => errs.push(e.message));
   await p.goto(APP, { waitUntil: 'networkidle' });
+  // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+  // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+  await p.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
   await p.waitForTimeout(500);
 
   const setDoc = async (md) => {

@@ -20,6 +20,9 @@ const { chromium } = require('playwright');
   const errs = [];
   p.on('pageerror', (e) => errs.push(e.message));
   await p.goto(url, { waitUntil: 'networkidle' });
+  // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+  // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+  await p.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
   await p.waitForTimeout(400);
 
   const src = () => p.evaluate(() => document.getElementById('editorTextarea').value);
@@ -487,8 +490,8 @@ const { chromium } = require('playwright');
     await p.waitForTimeout(300);
     bg = await badge();
     ck(bg.hidden && !bg.shown, '关闭后徽标隐藏', JSON.stringify(bg));
-    ck(await p.evaluate(() => document.getElementById('lintToggleMark').textContent === '⬜'),
-      '菜单勾选标记同步');
+    ck(await p.evaluate(() => document.getElementById('lintDisplayToggle').checked === false),
+      '设置弹窗里的开关同步');
     ck(await p.evaluate(() => localStorage.getItem('luogu_editor_lint_display') === '0'),
       '偏好写入 localStorage');
 

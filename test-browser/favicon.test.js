@@ -33,6 +33,9 @@ const check = (name, cond, extra = '') => {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   await page.goto(target);
+  // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+  // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+  await page.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
   await page.waitForTimeout(600);
 
   // ---- Declared icon links ----

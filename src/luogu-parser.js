@@ -531,14 +531,32 @@
         text = out.join('\n');
       }
 
-      // Inline display math: `$$x$$` closed on one line. remark-math treats this as
-      // inline math (rendered inline, not as a centred block), so it must be handled
-      // separately from the fence form above.
-      text = text.replace(/\$\$([^\n]+?)\$\$/g, (match, formula) => {
+      // `$$x$$` closed on one line.
+      //
+      // Luogu renders such a formula as DISPLAY math (centred and enlarged) when it
+      // stands alone on its line, which is what authors expect and what the editor
+      // must mirror. Note this is NOT what stock remark-math does — that library
+      // reports single-line `$$..$$` as inline — so Luogu evidently configures it
+      // differently. Verified against the live site rather than the library.
+      //
+      // A `$$..$$` sitting INSIDE a sentence stays inline: promoting it would emit a
+      // block-level <div> inside a <p>, which is invalid HTML and would also split
+      // the sentence in half.
+      text = text.replace(/\$\$([^\n]+?)\$\$/g, (match, formula, offset, whole) => {
         const f = formula.trim();
         if (!f) return match;
-        const id = `LUOGUMATHINLINE${mathIdx++}END`;
-        store.push({ id, type: 'inline', formula: f });
+        const lineStart = whole.lastIndexOf('\n', offset - 1) + 1;
+        const nl = whole.indexOf('\n', offset + match.length);
+        const before = whole.slice(lineStart, offset);
+        const after = whole.slice(offset + match.length, nl === -1 ? whole.length : nl);
+        const alone = /^\s*$/.test(before) && /^\s*$/.test(after);
+        const id = alone
+          ? `LUOGUMATHBLOCK${mathIdx++}END`
+          : `LUOGUMATHINLINE${mathIdx++}END`;
+        store.push({ id, type: alone ? 'display' : 'inline', formula: f });
+        // Only the matched `$$..$$` is replaced; `before` was read solely to decide
+        // whether the formula stands alone, and re-emitting it here duplicated the
+        // preceding text ("句中的 句中的 a+b").
         return id;
       });
 
@@ -795,6 +813,33 @@
             }
             out.push(this.renderTable(tableLines, isTuack, isCenter, { three: isThree, tuackCol }));
           }
+          continue;
+        }
+
+        // 2b. Paging markers. These are leaf directives — a whole line on their own,
+        // with no closing `:::` — and they produce no visible article content. They
+        // only carry instructions for the paged outputs (PDF / print, and the long
+        // image, which splits into one picture per section). In the preview they are
+        // drawn as small chips so the author can see where a page will break and what
+        // the running head will say.
+        const pageMatch = line.trim()
+          .match(/^:{3,}(pagination|header|footer)(?:\[([\s\S]*?)\])?\s*$/i);
+        if (pageMatch) {
+          const kind = pageMatch[1].toLowerCase();
+          const label = (pageMatch[2] || '').trim();
+          const anchor = ` data-src-line="${srcLineOf ? srcLineOf[i] : i}"`;
+          if (kind === 'pagination') {
+            out.push(`<div class="luogu-page-break" data-page-break="1"${anchor}`
+              + ` role="separator" aria-label="分页"><span>分页</span></div>`);
+          } else {
+            // The text is kept in a data attribute, not only as visible text: the
+            // print path copies it into a CSS `content:` string where markup cannot go.
+            out.push(`<div class="luogu-page-meta luogu-page-${kind}"`
+              + ` data-page-${kind}="${escapeHtml(label)}"${anchor}>`
+              + `<span class="luogu-page-meta-tag">${kind === 'header' ? '页眉' : '页脚'}</span>`
+              + `<span class="luogu-page-meta-text">${escapeHtml(label)}</span></div>`);
+          }
+          i++;
           continue;
         }
 
@@ -1415,6 +1460,16 @@
       let i = startIndex;
       const isOrdered = /^\s*\d+[.)]\s+/.test(lines[i]);
       const listTag = isOrdered ? 'ol' : 'ul';
+      // A list runs only as long as the marker keeps its shape. Switching between
+      // ordered and unordered — or changing the bullet / delimiter character —
+      // starts a NEW list in CommonMark. Without this the items simply piled into
+      // whichever list came first, so "1. 2. 3." followed by "- a - b" rendered the
+      // bullets as items 4 and 5 of the numbered list.
+      const kindOf = (ln) => {
+        const m = ln.match(/^\s*(?:([*+-])|\d+([.)]))\s+/);
+        return m ? (m[1] || m[2]) : null;
+      };
+      const listKind = kindOf(lines[i]);
       // A list starting at something other than 1 must carry it through as `start`,
       // otherwise "5. / 6." silently renumbers to 1. / 2. — the numbers are often
       // meaningful (continuing a list interrupted by a code block, citing step N).
@@ -1441,6 +1496,7 @@
 
         const match = line.match(/^(\s*)([*+-]|\d+[.)])(\s+)(.*)$/);
         if (!match || this.indentOf(line) !== baseIndent) break;
+        if (kindOf(line) !== listKind) break;          // marker changed -> new list
 
         // Column where this item's CONTENT starts, i.e. past the marker and the
         // spaces after it. CommonMark measures nesting and continuation against this

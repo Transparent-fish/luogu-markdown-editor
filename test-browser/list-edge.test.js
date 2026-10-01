@@ -5,6 +5,9 @@ const FILE = process.argv[2] || 'file://'+path.resolve(__dirname,'../LuoguMarkdo
   const b=await chromium.launch(); const p=await b.newPage();
   const errs=[]; p.on('pageerror',e=>errs.push(e.message));
   await p.goto(FILE); await p.waitForTimeout(2600);
+  // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+  // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+  await p.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
   const setup=async v=>{await p.evaluate(x=>{const t=document.querySelector('textarea');t.value=x;t.dispatchEvent(new Event('input',{bubbles:true}));t.focus();t.selectionStart=t.selectionEnd=x.length;},v);};
   const val=()=>p.evaluate(()=>document.querySelector('textarea').value);
   let bad=0; const chk=(n,got,exp)=>{ if(got!==exp){bad++;console.log(`❌ ${n}\n    实得 ${JSON.stringify(got)}\n    期望 ${JSON.stringify(exp)}`);} };

@@ -711,6 +711,29 @@ test('list item content is never dropped', () => {
   }
 });
 
+test('changing the list marker starts a new list', () => {
+  // A list runs only while the marker keeps its shape. Previously the items just
+  // piled into whichever list came first, so bullets after "1. 2. 3." were rendered
+  // as items 4 and 5 of the numbered list.
+  const onlyOl = render('1. a\n2. b\n\n- c\n- d');
+  assert.match(onlyOl, /<ol[\s\S]*<\/ol>\s*<ul[\s\S]*<\/ul>/, '有序后接无序应拆成两个列表');
+  assert.strictEqual((onlyOl.match(/<ol\b/g) || []).length, 1);
+  assert.strictEqual((onlyOl.match(/<ul\b/g) || []).length, 1);
+  // Two items each, not four in one list.
+  assert.strictEqual((onlyOl.match(/<li\b/g) || []).length, 4);
+
+  assert.match(render('- a\n- b\n\n1. c'), /<ul[\s\S]*<\/ul>\s*<ol[\s\S]*<\/ol>/);
+  assert.match(render('1. a\n2. b\n- c'), /<ol[\s\S]*<\/ol>\s*<ul[\s\S]*<\/ul>/);
+  // Bullet character and ordered delimiter also count as a change.
+  assert.strictEqual((render('- a\n* b').match(/<ul\b/g) || []).length, 2);
+  assert.strictEqual((render('1. a\n2) b').match(/<ol\b/g) || []).length, 2);
+  // ...but a consistent marker must NOT be split.
+  assert.strictEqual((render('- a\n- b\n- c').match(/<ul\b/g) || []).length, 1);
+  assert.strictEqual((render('1. a\n2. b\n3. c').match(/<ol\b/g) || []).length, 1);
+  // Nesting is unaffected.
+  assert.match(render('1. a\n   - x\n2. b'), /<ol[\s\S]*<ul[\s\S]*<\/ul>[\s\S]*<\/ol>/);
+});
+
 // ------------------------------- Link reference definitions may wrap
 //
 // CommonMark allows one line ending between the label's colon and the destination,
@@ -774,6 +797,32 @@ test('several wrapped definitions in a row all register', () => {
   assert.match(render('[a]:\n/first\n\n[a]:\n/second\n\n[a]'), /href="\/first"/);
 });
 
+test('a standalone $$..$$ line renders as display math', () => {
+  const F = '$$\\frac{C-|x-y|}{2^{p_y}}\\geq\\frac{C-|x-z|}{2^{p_z}}$$';
+  for (const src of [F, `前面。\n\n${F}\n\n后面。`, [F, F, F].join('\n\n')]) {
+    const h = render(src);
+    assert.match(h, /luogu-math-display/, `应为行间: ${JSON.stringify(src)}`);
+    assert.doesNotMatch(h, /luogu-math-inline/, `不应出现行内: ${JSON.stringify(src)}`);
+  }
+  // Every occurrence is promoted, not just the first.
+  assert.strictEqual((render([F, F, F].join('\n\n')).match(/luogu-math-display/g) || []).length, 3);
+  // Leading whitespace still counts as "alone on the line".
+  assert.match(render('   $$x$$'), /luogu-math-display/);
+  // A block-level formula must not end up nested inside a paragraph.
+  assert.doesNotMatch(render(F), /<p[^>]*>\s*<div class="luogu-math-display"/);
+});
+
+test('promoting $$ does not duplicate the surrounding text', () => {
+  // Deciding "is it alone on the line?" requires reading the text before the match;
+  // an early version re-emitted that text, rendering "句中的 句中的 a+b".
+  const text = (md) => render(md)
+    .replace(/<annotation[^>]*>[\s\S]*?<\/annotation>/g, '')
+    .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  assert.strictEqual((text('句中的 $$a+b$$ 仍保持行内。').match(/句中的/g) || []).length, 1);
+  assert.strictEqual((text('A $$x$$ B $$y$$ C').match(/A/g) || []).length, 1);
+  assert.ok(!/前缀文字\s+前缀文字/.test(text('前缀文字 $$x$$ 后缀文字')));
+});
+
 // ------------------------------- Inline math may wrap onto the next line
 //
 // remark-math (what Luogu renders with) allows inline `$...$` to span multiple
@@ -820,10 +869,15 @@ test('$$ display math follows remark-math fence rules', () => {
   assert.match(render('$$\nx^2\n$$'), /luogu-math-display/);
   // Up to three leading spaces still counts as a fence.
   assert.match(render('  $$\nx\n$$'), /luogu-math-display/);
-  // Closed on the same line it is inline math, not a display block.
-  assert.match(render('$$x$$'), /luogu-math-inline/);
-  assert.doesNotMatch(render('$$x$$'), /luogu-math-display/);
-  assert.match(render('文字 $$x$$'), /luogu-math-inline/);
+  // A `$$..$$` alone on its line is DISPLAY math on Luogu (centred, enlarged).
+  // Stock remark-math calls this inline; Luogu evidently configures it otherwise,
+  // and the live site is the baseline that matters here.
+  assert.match(render('$$x$$'), /luogu-math-display/);
+  assert.doesNotMatch(render('$$x$$'), /luogu-math-inline/);
+  // Inside a sentence it must stay inline: a block <div> inside a <p> is invalid
+  // HTML and would break the sentence in two.
+  assert.match(render('文字 $$x$$ 文字'), /luogu-math-inline/);
+  assert.doesNotMatch(render('文字 $$x$$ 文字'), /luogu-math-display/);
   // Content after the opening fence on the same line is meta and is dropped.
   assert.match(render('$$ x\ny\n$$'), /luogu-math-display/);
   // An unclosed fence runs to end of input rather than consuming later text.

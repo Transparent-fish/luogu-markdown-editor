@@ -1,0 +1,220 @@
+name: Desktop
+
+# The three-platform Tauri build. Kept separate from CI on purpose: a Rust build
+# takes minutes and needs system toolchains, which would turn CI's two-minute
+# feedback loop into a slow, flaky one. It runs when asked from the Actions tab,
+# and on a release tag — where the installers are attached to the *same* Release
+# the single-file HTML goes to, so one version number means one download page for
+# every way of running the editor.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+  # Desktop changes are exactly the kind that only fail in a real three-platform
+  # build, so they get one on the PR instead of on the release tag — by then the
+  # version number is already public. Scoped to the files that can actually break
+  # it: editing src/ only changes the HTML the shell embeds.
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'scripts/stage-desktop-frontend.js'
+      - '.github/workflows/desktop.yml'
+
+# Writing assets onto the Release needs contents:write; nothing else is granted.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: linux
+          - os: windows-latest
+            label: windows
+          - os: macos-latest
+            label: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # One version string for the whole release: the tag when a tag was pushed,
+      # otherwise the version in package.json, so a manual run still produces
+      # sensibly named files. CI keeps package.json, Cargo.toml and tauri.conf.json
+      # in step, so this is also the version the installer reports about itself.
+      - name: Resolve the version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            version="${{ github.ref_name }}"
+          else
+            version="v$(node -p "require('./package.json').version")"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Packaging $version for ${{ matrix.label }}"
+
+      # Same reason release.yml tests before it publishes: a ten-minute build is
+      # wasted, and worse, misleading, if the commit it started from is broken.
+      - name: Run the test suite
+        run: node --test test/
+
+      # The desktop app ships the very same artifact the web build produces, so it
+      # is built here rather than vendored — the two cannot drift apart.
+      - name: Build the single-file editor
+        run: node build-standalone.js
+
+      - name: Stage it as the desktop frontend
+        run: node scripts/stage-desktop-frontend.js
+
+      - name: Install Linux build dependencies
+        if: matrix.label == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # macos-latest is an arm64 runner, so a plain build would hand Intel Macs a
+      # binary they cannot open. A universal binary is the difference between "a
+      # macOS build exists" and "macOS users can actually run it".
+      - name: Add the macOS targets
+        if: matrix.label == 'macos'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install the Tauri CLI
+        working-directory: desktop
+        run: npm install
+
+      - name: Build the application (Windows / Linux)
+        if: matrix.label != 'macos'
+        working-directory: desktop
+        run: npx tauri build
+
+      - name: Build the application (macOS, universal)
+        if: matrix.label == 'macos'
+        working-directory: desktop
+        run: npx tauri build --target universal-apple-darwin
+
+      # Bundle file names come from tauri.conf.json, where productName is Chinese
+      # and carries the version. Release assets are better off ASCII, stable and
+      # guessable, so each platform's file is copied out under its own name.
+      - name: Collect the installers
+        shell: bash
+        run: |
+          mkdir -p out
+          case "${{ matrix.label }}" in
+            macos) bundle="desktop/src-tauri/target/universal-apple-darwin/release/bundle" ;;
+            *)     bundle="desktop/src-tauri/target/release/bundle" ;;
+          esac
+          if [ ! -d "$bundle" ]; then
+            echo "::error::no bundle directory at $bundle — the build produced nothing."
+            exit 1
+          fi
+
+          copy() { # <glob> <asset name>
+            local src
+            # -print -quit, not `| head -n 1`: under `set -o pipefail` (which is how
+            # Actions runs bash) head closing the pipe early can hand find a SIGPIPE
+            # and fail the step over a perfectly good build.
+            src=$(find "$bundle" -type f -name "$1" -print -quit)
+            if [ -z "$src" ]; then
+              echo "::error::the build produced no file matching '$1' under $bundle"
+              exit 1
+            fi
+            cp "$src" "out/$2"
+            echo "out/$2  <-  ${src#"$bundle"/}"
+          }
+
+          case "${{ matrix.label }}" in
+            windows)
+              copy '*-setup.exe' "LuoguMarkdownEditor-$VERSION-windows-x64-setup.exe"
+              ;;
+            linux)
+              copy '*.AppImage' "LuoguMarkdownEditor-$VERSION-linux-x86_64.AppImage"
+              copy '*.deb'      "LuoguMarkdownEditor-$VERSION-linux-amd64.deb"
+              ;;
+            macos)
+              copy '*.dmg'      "LuoguMarkdownEditor-$VERSION-macos-universal.dmg"
+              ;;
+          esac
+          ls -lh out/
+
+      # Portable build: the bare executable plus the marker file that makes it keep
+      # its data (drafts, recent files) in its own folder instead of the user
+      # profile. That is the whole point of a green/portable copy — it has to
+      # survive being carried to another machine on a stick.
+      - name: Assemble the portable package
+        shell: bash
+        run: |
+          mkdir -p portable
+          case "${{ matrix.label }}" in
+            windows) cp "desktop/src-tauri/target/release/luogu-markdown-editor.exe" portable/ ;;
+            linux)   cp "desktop/src-tauri/target/release/luogu-markdown-editor" portable/ ;;
+            macos)   cp -R "desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/"*.app portable/ ;;
+          esac
+          printf '%s\n' \
+            '这个文件让编辑器以便携模式运行：' \
+            '草稿、最近打开记录等数据会写入同目录的 data/ 文件夹，' \
+            '而不是系统用户目录。删除本文件即恢复为普通模式。' \
+            > portable/portable.txt
+          ls -lh portable/
+
+      # tar, not zip, for the Unix packages: a zipped macOS .app loses its
+      # executable bits and symlinks, which is the classic way to ship a bundle
+      # that refuses to launch once it reaches the user.
+      - name: Package the portable copy (Windows)
+        if: matrix.label == 'windows'
+        shell: pwsh
+        run: |
+          # $($env:VERSION) rather than $env:VERSION: PowerShell would otherwise be
+          # free to read the name as "VERSION-windows-x64-portable.zip".
+          $zip = "out\LuoguMarkdownEditor-$($env:VERSION)-windows-x64-portable.zip"
+          Compress-Archive -Path portable\* -DestinationPath $zip
+          Get-ChildItem out
+
+      - name: Package the portable copy (Linux / macOS)
+        if: matrix.label != 'windows'
+        shell: bash
+        run: |
+          case "${{ matrix.label }}" in
+            linux) suffix=linux-x86_64 ;;
+            macos) suffix=macos-universal ;;
+          esac
+          tar -czf "out/LuoguMarkdownEditor-$VERSION-$suffix-portable.tar.gz" -C portable .
+          ls -lh out/
+
+      # Kept even on tag builds: a half-finished release is much easier to debug
+      # from the artifacts of the run that produced it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-${{ matrix.label }}
+          path: portable/*
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.label }}
+          path: out/*
+          if-no-files-found: error
+
+      # No `body:` here on purpose — release.yml owns the release notes, and the
+      # two workflows race for the same tag. This step only ever adds assets, so
+      # whichever finishes first, the notes and the files both end up correct.
+      - name: Attach the installers to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: out/*
+          fail_on_unmatched_files: true

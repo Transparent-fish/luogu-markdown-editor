@@ -43,10 +43,39 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
   --font-mono: "Cascadia Code", "Fira Code", "Consolas", "Courier New", monospace;
   --font-math: "KaTeX_Main", "Times New Roman", serif;
+
+  /* File explorer (desktop panel). Kind colours follow the familiar editor idiom:
+     loud for source you edit, quiet for data you only look at. Declared here rather
+     than in the panel block so the dark theme can retune just the greys. */
+  --ws-folder: #dcb67a;
+  --ws-md: #519aba;
+  --ws-txt: #8a8f98;
+  --ws-js: #e2b93d;
+  --ws-html: #e37933;
+  --ws-css: #42a5f5;
+  --ws-cpp: #9c6ade;
+  --ws-py: #4b8bbe;
+  --ws-java: #cc7832;
+  --ws-rust: #d08770;
+  --ws-go: #4ec9b0;
+  --ws-shell: #89e051;
+  --ws-config: #9aa0a6;
+  --ws-img: #a074c4;
+  --ws-pdf: #e05c5c;
+  --ws-zip: #c9a227;
+  --ws-bin: #7f8c8d;
+  --ws-plain: #9aa0a6;
+  --ws-indent: rgba(110, 110, 110, .30);
+  --ws-selected-bg: rgba(52, 152, 219, .18);
+  --ws-row-h: 22px;
 }
 
 /* Dark Theme */
 [data-theme="dark"] {
+  /* Tell the browser this page is dark so it paints UA-drawn widgets to match.
+     Without it an unchecked <input type="checkbox"> stays a solid white square —
+     glaring on a dark preview, and carried straight into the dark PDF. */
+  color-scheme: dark;
   --bg-primary: #1e1e1e;
   --bg-secondary: #252526;
   --bg-tertiary: #2d2d30;
@@ -67,6 +96,16 @@
   --luogu-orange-light: #3d2b14;
   --luogu-red: #d32f2f;
   --luogu-red-light: #3b1b1b;
+
+  /* Retune the explorer greys for a dark panel; the kind colours are mid-tones
+     that already read well on both backgrounds. */
+  --ws-plain: #8b949e;
+  --ws-txt: #8b949e;
+  --ws-config: #9aa0a6;
+  --ws-indent: rgba(255, 255, 255, .13);
+  --ws-selected-bg: rgba(0, 122, 204, .32);
+  --ws-pdf: #e87979;
+  --ws-zip: #d4b04a;
 }
 
 /* Academic White Theme */
@@ -540,6 +579,9 @@ html, body {
 
 /* Resizer Splitter */
 .split-resizer {
+  /* 必须显式写 flex：两侧面板被拖成 `0 0 NN%` 之后，两者的 basis 相加就等于容器
+     宽度，分割条作为唯一还能收缩的伸缩项会被压成 0px —— 拖一次就"消失"了。 */
+  flex: 0 0 6px;
   width: 6px;
   height: 100%;
   background: var(--border-color);
@@ -592,6 +634,14 @@ html, body {
 .mode-typora .editor-pane,
 .mode-typora .split-resizer {
   display: none !important;
+}
+
+/* 分割条拖动会把内联 flex 写在两侧面板上；只剩一栏时必须中和掉，否则可见的那一栏
+   仍按拖动比例占宽，右侧留一片空白（!important 的样式表规则能压过内联样式）。 */
+.mode-editor-only .editor-pane,
+.mode-preview-only .preview-pane,
+.mode-typora .preview-pane {
+  flex: 1 1 auto !important;
 }
 
 .mode-typora .preview-pane {
@@ -1730,6 +1780,90 @@ code[class*="language-"] {
   flex-shrink: 0;
 }
 
+/* 设置弹窗：一行一个设置项，左边是名字、右边是控件。
+   用 grid 而不是 flex 是为了让所有行的控件左边缘对齐 —— 名字长短不一时，
+   右对齐的控件列看起来才不晃。 */
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.settings-section + .settings-section {
+  padding-top: 18px;
+  border-top: 1px solid var(--border-color);
+}
+
+.settings-section-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--luogu-blue);
+  text-transform: uppercase;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px 16px;
+  padding: 7px 0;
+  font-size: 13px;
+}
+
+.settings-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-control {
+  justify-self: end;
+  width: auto;
+  min-width: 190px;
+  max-width: 260px;
+}
+
+/* 开关那一列：勾选框在上、说明在下；说明跟着勾选框走，不然一行里两段文字会
+   在垂直方向错开，看起来像两个设置项。 */
+.settings-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  justify-self: end;
+  max-width: 380px;
+}
+
+.settings-switch input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--luogu-blue);
+  cursor: pointer;
+}
+
+.settings-switch .settings-hint {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+/* 窄屏上把两列叠起来，否则 160px 的名字列会把控件挤到看不见。 */
+@media (max-width: 560px) {
+  .settings-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .settings-control,
+  .settings-switch {
+    justify-self: stretch;
+    max-width: none;
+  }
+}
+
 /* Form Controls in Modal */
 .form-group {
   margin-bottom: 16px;
@@ -2729,8 +2863,10 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
 /* An editor pinned over the element it edits, leaving the document's own layout
    untouched. A merged table cell cannot host an inline editor without the table
    reflowing around it, so the cell editor floats instead. */
-.preview-content.typora-mode .typora-editing/* Cell-local editing: the marker text is replaced by the input inside the same
-   <td>, so the un-merged skeleton around it keeps its own markers on screen. */
+/* Cell-local editing: the marker text is replaced by the input inside the same
+   <td>, so the un-merged skeleton around it keeps its own markers on screen.
+   （这里原本漏了一个 `{`：选择器与注释粘在一起，于是下面这条规则从未生效过，
+   单元格的 padding / 字号都没被归零。） */
 .preview-content.typora-mode td.typora-host-editing,
 .preview-content.typora-mode th.typora-host-editing {
   padding: 0 !important;
@@ -2757,7 +2893,8 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   border-radius: 3px;
   padding: 2px 4px;
   text-align: center;
-  background: #fff;
+  /* 曾经写死 #fff：暗色主题下点开 `^` / `<` 这类合并标记格，编辑框是个刺眼的白块。 */
+  background: var(--bg-primary);
 }
 
 .typora-overlay {
@@ -2936,3 +3073,665 @@ table.luogu-tuack-table[data-tuack-col="8"] td:nth-child(8) {
   font-weight: 600;
 }
 .find-btn.is-armed:hover { color: #fff; filter: brightness(1.08); }
+
+/* ---- Paging markers ---------------------------------------------------------
+   `:::Pagination`, `:::Header[..]` and `:::Footer[..]` produce no article content —
+   they instruct the paged outputs. On screen they are drawn as small chips so the
+   author can see where a page will break and what the running head will say; in
+   print the chips are hidden, because the text is emitted into the @page margin
+   boxes instead and would otherwise appear twice. */
+.luogu-page-break {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  user-select: none;
+}
+.luogu-page-break::before,
+.luogu-page-break::after {
+  content: '';
+  flex: 1;
+  border-top: 2px dashed var(--border-color);
+}
+.luogu-page-break > span {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  letter-spacing: .1em;
+}
+
+.luogu-page-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-left: 3px solid var(--luogu-blue, #3498db);
+  background: rgba(52, 152, 219, .07);
+  border-radius: 0 4px 4px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.luogu-page-meta-tag {
+  flex: none;
+  font-weight: 600;
+  color: var(--luogu-blue, #3498db);
+}
+.luogu-page-meta-text {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* The chips are editing aids, never part of the output. */
+@media print {
+  .luogu-page-break,
+  .luogu-page-meta { display: none !important; }
+  /* A section owns its page; never let one leak a stray blank page at the end. */
+  .luogu-page-section > *:last-child { margin-bottom: 0 !important; }
+}
+.print-light .luogu-page-break, .print-light .luogu-page-meta,
+.print-dark .luogu-page-break, .print-dark .luogu-page-meta { display: none !important; }
+
+/* ---- NOI / tuack style print theme -----------------------------------------
+   Modelled on official NOI problem statements: serif throughout, light sample
+   boxes rather than a dark editor theme, thin black table grids, and a running
+   head plus "第 N 页 共 M 页" foot. Applied only when printing with this theme
+   chosen, so the default PDF is untouched. */
+.print-noi .preview-content,
+.print-noi .preview-content * {
+  /* CJK serif first; the Latin faces are listed ahead so digits and formulas fall
+     to Times rather than to a CJK face's half-width glyphs. */
+  font-family: "Times New Roman", Times, "SimSun", "Songti SC",
+    "Source Han Serif SC", "Noto Serif CJK SC", "STSong", serif !important;
+}
+/* Maths and code must keep their own faces. */
+.print-noi .preview-content .katex,
+.print-noi .preview-content .katex * { font-family: KaTeX_Main, "Times New Roman", serif !important; }
+.print-noi .preview-content code,
+.print-noi .preview-content pre,
+.print-noi .preview-content pre * {
+  font-family: Consolas, "Courier New", "DejaVu Sans Mono", monospace !important;
+}
+
+@media print {
+  .print-noi html, .print-noi body,
+  html.print-noi, body.print-noi { font-size: 10.5pt !important; }
+
+  .print-noi .preview-content { line-height: 1.5 !important; }
+
+  /* Headings: plain bold serif, no rules or colour — NOI statements use 【…】
+     section titles with nothing decorative around them. */
+  .print-noi .preview-content h1,
+  .print-noi .preview-content h2,
+  .print-noi .preview-content h3,
+  .print-noi .preview-content h4 {
+    border: none !important;
+    color: #000 !important;
+    font-weight: bold !important;
+    padding: 0 !important;
+    margin: 1.1em 0 .5em !important;
+    page-break-after: avoid !important;
+  }
+  .print-noi .preview-content h1 { font-size: 15pt !important; text-align: center !important; }
+  .print-noi .preview-content h2 { font-size: 12.5pt !important; }
+  .print-noi .preview-content h3 { font-size: 11.5pt !important; }
+
+  /* Sample I/O reads as a bordered light box, not the editor's dark theme. */
+  .print-noi .preview-content .luogu-code-block-wrapper,
+  .print-noi .preview-content pre,
+  .print-noi .preview-content .luogu-code-pre {
+    background: #fff !important;
+    color: #000 !important;
+    border: 1px solid #000 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .print-noi .preview-content pre *,
+  .print-noi .preview-content code { color: #000 !important; background: transparent !important; }
+  /* Inline code sits in prose as plain monospace in a printed statement —
+     the on-screen pill (rounded tinted box) looks like a UI widget on paper. */
+  .print-noi .preview-content :not(pre) > code {
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+  .print-noi .preview-content .luogu-code-header { display: none !important; }
+
+  /* Thin black grid, the way statement tables are set. The table element carries
+     its own border in the tuack / three-line styles, and the tuack divider column
+     is coloured separately — both need overriding or a blue frame survives on an
+     otherwise monochrome page. */
+  .print-noi .preview-content table,
+  .print-noi .preview-content table.luogu-tuack-table,
+  .print-noi .preview-content table.luogu-three-table,
+  .print-noi .preview-content table.luogu-cute-centered-table {
+    border-collapse: collapse !important;
+    border-color: #000 !important;
+  }
+  .print-noi .preview-content table.luogu-tuack-table[data-tuack-col] th,
+  .print-noi .preview-content table.luogu-tuack-table[data-tuack-col] td,
+  .print-noi .preview-content .luogu-tuack-table th,
+  .print-noi .preview-content .luogu-tuack-table td,
+  .print-noi .preview-content .luogu-three-table th,
+  .print-noi .preview-content .luogu-three-table td {
+    border-color: #000 !important;
+  }
+  .print-noi .preview-content th,
+  .print-noi .preview-content td {
+    border: .6pt solid #000 !important;
+    background: #fff !important;
+    color: #000 !important;
+    padding: 3pt 6pt !important;
+  }
+  .print-noi .preview-content thead th { font-weight: bold !important; }
+  .print-noi .preview-content tr:nth-child(even) td { background: #fff !important; }
+
+  /* Callouts flatten to a plain ruled block; coloured panels look wrong on paper. */
+  .print-noi .preview-content details.luogu-callout {
+    border: none !important;
+    border-left: 1.5pt solid #000 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+  .print-noi .preview-content .luogu-callout-summary {
+    background: #fff !important;
+    color: #000 !important;
+    border: none !important;
+  }
+  .print-noi .preview-content .luogu-callout-arrow,
+  .print-noi .preview-content .luogu-callout-icon { display: none !important; }
+
+  .print-noi .preview-content blockquote {
+    border-left: 1.5pt solid #000 !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .print-noi .preview-content a { color: #000 !important; text-decoration: none !important; }
+  .print-noi .preview-content hr { border-top: .6pt solid #000 !important; }
+}
+
+/* The print context does not inherit the page's colour scheme, so the dark PDF
+   needs it declared again — otherwise the checkbox reverts to a white square. */
+@media print {
+  html.print-dark, .print-dark body { color-scheme: dark; }
+}
+
+/* ---- Workspace panel & file explorer (desktop only) --------------------------
+   Hidden unless a native filesystem is present; `has-workspace` is set by
+   LuoguWorkspace.mount(). The tree aims to read like a sidebar you already know:
+   22px rows, a chevron that rotates, kind-coloured icons, indent guides. */
+.workspace-panel { display: none; }
+.has-workspace .workspace-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 240px;
+  min-width: 180px;
+  max-width: 480px;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  overflow: hidden;
+  font-size: 12px;
+}
+/* Grab handle: a flex item with negative margins, so it is 5px of pointer target
+   straddling the border while costing zero layout width. */
+.ws-resizer {
+  flex: 0 0 5px;
+  width: 5px;
+  margin: 0 -2.5px;
+  z-index: 6;
+  cursor: col-resize;
+  background: transparent;
+}
+.ws-resizer:hover { background: var(--border-focus); opacity: .5; }
+body.ws-resizing { user-select: none; }
+body.ws-resizing,
+body.ws-resizing * { cursor: col-resize !important; }
+
+.ws-head {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+.ws-title {
+  flex: 1;
+  padding-left: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ws-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.ws-btn:active { transform: translateY(1px); }
+
+.ws-filter-row { padding: 6px 6px 2px; }
+.ws-filter {
+  width: 100%;
+  height: 22px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  outline: none;
+}
+.ws-filter:focus { border-color: var(--border-focus); }
+.ws-filter::placeholder { color: var(--text-muted); }
+
+.ws-sec {
+  padding: 5px 8px;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.ws-tree {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 4px 4px 8px;
+  outline: none;
+  user-select: none;
+}
+.ws-recent { flex: 0 0 auto; max-height: 132px; overflow: auto; padding: 2px 4px 6px; }
+.ws-empty { padding: 6px 8px; color: var(--text-muted); }
+.ws-empty-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 8px;
+}
+.ws-empty-hint { color: var(--text-muted); }
+.ws-empty-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ws-empty-btn:hover { border-color: var(--border-focus); color: var(--border-focus); }
+.ws-empty-btn-quiet { background: transparent; }
+
+/* --- tree rows --- */
+.ws-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  user-select: none;   /* 指针拖动时不要顺手选中一排文件名 */
+  -webkit-user-select: none;
+  height: var(--ws-row-h);
+  padding: 0 6px;
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ws-node:hover { background: var(--bg-tertiary); }
+/* Indent guides: one 1px line per ancestor level, painted as the row's background
+   so there is no per-level element to keep in sync with the DOM. */
+.ws-node.has-guides {
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--ws-indent) 0 1px,
+    transparent 1px 14px);
+  background-repeat: no-repeat;
+  background-position: 6px 0;
+  background-size: calc(var(--ws-depth, 1) * 14px) 100%;
+}
+.ws-node.is-root > .ws-node-name { font-weight: 600; }
+.ws-node.is-selected { background: var(--ws-selected-bg); }
+/* The focus ring only while the tree actually has focus — otherwise it lingers as a
+   stray blue box after you click into the editor. */
+#wsTree:focus-within .ws-node.is-focused { box-shadow: inset 0 0 0 1px var(--border-focus); }
+/* The file open in the editor and the selected row are different things and can
+   both be true; the open one gets colour, the selection gets the fill. */
+.ws-node.is-open > .ws-node-name { color: var(--luogu-blue); font-weight: 600; }
+.ws-node.is-dirty > .ws-node-name::after {
+  content: '●';
+  margin-left: 5px;
+  font-size: 9px;
+  color: var(--luogu-orange);
+  vertical-align: 1px;
+}
+.ws-node.is-dragging { opacity: .45; }
+.ws-node.is-drop-target {
+  background: var(--luogu-blue-light);
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+}
+.ws-node-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-input-row { cursor: default; }
+
+.ws-chev {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+.ws-svg-chev { transition: transform .12s ease; }
+.ws-node.is-expanded > .ws-chev .ws-svg-chev { transform: rotate(90deg); }
+.ws-icon { flex: none; display: inline-flex; width: 16px; height: 16px; }
+
+/* --- icons (inline SVG, see luogu-workspace.js for why not a font) --- */
+.ws-svg {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ws-svg-btn { stroke-width: 1.25; }
+.ws-svg-folder { color: var(--ws-folder); }
+.ws-folder-back { opacity: .55; }
+.ws-svg[data-slot="md"] { color: var(--ws-md); }
+.ws-svg[data-slot="txt"] { color: var(--ws-txt); }
+.ws-svg[data-slot="js"] { color: var(--ws-js); }
+.ws-svg[data-slot="html"] { color: var(--ws-html); }
+.ws-svg[data-slot="css"] { color: var(--ws-css); }
+.ws-svg[data-slot="cpp"] { color: var(--ws-cpp); }
+.ws-svg[data-slot="py"] { color: var(--ws-py); }
+.ws-svg[data-slot="java"] { color: var(--ws-java); }
+.ws-svg[data-slot="rust"] { color: var(--ws-rust); }
+.ws-svg[data-slot="go"] { color: var(--ws-go); }
+.ws-svg[data-slot="shell"] { color: var(--ws-shell); }
+.ws-svg[data-slot="config"] { color: var(--ws-config); }
+.ws-svg[data-slot="img"] { color: var(--ws-img); }
+.ws-svg[data-slot="pdf"] { color: var(--ws-pdf); }
+.ws-svg[data-slot="zip"] { color: var(--ws-zip); }
+.ws-svg[data-slot="bin"] { color: var(--ws-bin); }
+.ws-svg[data-slot="plain"] { color: var(--ws-plain); }
+
+/* --- inline rename / new-entry input --- */
+.ws-inline-input {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  padding: 0 5px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-focus);
+  border-radius: 3px;
+  outline: none;
+}
+
+/* --- context menu --- */
+.ws-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+  font-size: 12px;
+}
+.ws-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+}
+.ws-menu-item > span:first-child { flex: 1; }
+.ws-menu-item:hover,
+.ws-menu-item:focus { background: var(--bg-tertiary); }
+.ws-menu-hint { color: var(--text-muted); font-size: 11px; }
+.ws-menu-item.is-danger { color: var(--luogu-red); }
+.ws-menu-item.is-danger:hover,
+.ws-menu-item.is-danger:focus { background: var(--luogu-red-light); }
+.ws-menu-sep { height: 1px; margin: 4px 6px; background: var(--border-color); }
+
+/* 只在桌面版（有文件树）出现的控件。 */
+/* 只在桌面版出现的控件：写回磁盘、自动保存、保存时排版。网页版现在也有标签页
+   （has-workspace 对它同样成立），但这些功能在那儿没有依据，所以按 ws-desktop 判。 */
+.ws-desktop-only { display: none !important; }
+/* 每种宿主元素要显式写回它自己的 display —— 用 revert 会退到浏览器默认值，
+   网格行的两列布局就没了。 */
+html.ws-desktop .dropdown-item.ws-desktop-only { display: flex !important; }
+html.ws-desktop .status-item.ws-desktop-only { display: flex !important; }
+html.ws-desktop .settings-row.ws-desktop-only { display: grid !important; }
+html.ws-desktop .settings-section.ws-desktop-only { display: block !important; }
+
+/* "是否保存更改？" 三选一对話框：保存 / 不保存 / 取消。
+   宿主自带的 confirm 只有两个按钮，缺的正是最常用的那个"保存"。 */
+.ws-ask-dialog {
+  width: min(420px, 92vw);
+  padding: 20px 22px 16px;
+  border-radius: 10px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .28);
+}
+.ws-ask-title { margin: 0 0 8px; font-size: 15px; color: var(--text-primary); }
+.ws-ask-body { margin: 0 0 18px; font-size: 13px; line-height: 1.7; color: var(--text-secondary); }
+.ws-ask-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+.ws-ask-btn {
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ws-ask-btn:hover { border-color: var(--border-focus); }
+.ws-ask-btn.is-primary {
+  color: #fff;
+  background: var(--luogu-blue);
+  border-color: var(--luogu-blue);
+}
+.ws-ask-btn.is-primary:hover { background: var(--luogu-blue-dark, var(--luogu-blue)); }
+.ws-ask-btn.is-danger { color: var(--luogu-red); }
+.ws-ask-btn.is-danger:hover { border-color: var(--luogu-red); background: var(--luogu-red-light); }
+.ws-ask-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+
+
+/* --- 收起后的侧栏 ---
+   宽度由 JS 直接写在 style 上（宽度本来就是内联设置的，类选择器压不过它），
+   这里只负责把面板里的东西藏起来、把轨道露出来。 */
+.workspace-panel.is-collapsed {
+  /* min-width 会把 flex-basis 顶回去（宽度取两者中更大的），收起时必须让开。 */
+  padding: 0;
+  min-width: 0;
+  max-width: none;
+}
+.workspace-panel.is-collapsed .ws-head,
+.workspace-panel.is-collapsed .ws-filter-row,
+.workspace-panel.is-collapsed .ws-tree,
+.workspace-panel.is-collapsed .ws-sec,
+.workspace-panel.is-collapsed .ws-recent { display: none; }
+.ws-rail { display: none; }
+.workspace-panel.is-collapsed .ws-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  width: 100%;
+}
+
+/* --- 拖动时跟着指针的小标签 ---
+   fixed + transform：拖动过程中只改 transform，不触发布局。 */
+.ws-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9000;
+  pointer-events: none;
+  max-width: 240px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 3px 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-focus);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+}
+body.ws-dragging { user-select: none; }
+body.ws-dragging,
+body.ws-dragging * { cursor: grabbing !important; }
+
+/* --- 把文件拖到窗口上时的提示层（桌面版的原生拖放） --- */
+.ws-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(127, 127, 127, .16);
+  border: 2px dashed var(--luogu-blue);
+  border-radius: 6px;
+}
+/* [hidden] 只是 UA 样式表里的 display:none，压不过上面写死的 display:flex。 */
+.ws-drop-hint[hidden],
+.ws-drag-ghost[hidden] { display: none !important; }
+.ws-drop-hint-box {
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
+}
+
+/* --- empty state: no file open ------------------------------------------------
+   Shown when the last tab is closed. The textarea is made read-only at the same
+   time (LuoguWorkspace._applyEmptyState) — with no tab there is nowhere to save
+   what you type, so the typing is blocked rather than silently dropped. */
+.ws-watermark {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  background: var(--bg-editor);
+  color: var(--text-secondary);
+  text-align: center;
+}
+/* `display: flex` above would otherwise beat the [hidden] attribute. */
+.ws-watermark[hidden] { display: none; }
+.ws-watermark-icon { color: var(--text-muted); opacity: .55; }
+.ws-svg-watermark { width: 44px; height: 44px; stroke-width: 1.1; }
+.ws-watermark-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.ws-watermark-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.ws-watermark-btn {
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.ws-watermark-btn:hover { border-color: var(--border-focus); color: var(--border-focus); }
+.ws-watermark-hint { font-size: 11px; color: var(--text-muted); max-width: 340px; line-height: 1.7; }
+.ws-watermark-hint kbd {
+  padding: 1px 5px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}
+/* Read-only editor: dimmed just enough to read as "nothing to edit here". */
+.ws-no-docs .editor-textarea { opacity: .5; cursor: default; }
+.ws-no-docs .line-numbers-gutter { opacity: .35; }
+
+/* Document tabs, above the editor. */
+.ws-tabs { display: none; }
+.has-workspace .ws-tabs {
+  display: flex;
+  flex: none;
+  gap: 1px;
+  overflow-x: auto;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+.ws-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  border-right: 1px solid var(--border-color);
+  color: var(--text-muted);
+  white-space: nowrap;
+  max-width: 200px;
+}
+.ws-tab:hover { background: var(--bg-tertiary); }
+.ws-tab.is-active {
+  background: var(--bg-editor);
+  color: var(--text-primary);
+  box-shadow: inset 0 2px 0 var(--luogu-blue);
+}
+.ws-tab.is-dirty .ws-tab-name { font-style: italic; }
+.ws-tab.is-dirty .ws-tab-close { color: var(--luogu-orange); }
+.ws-tab-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-tab-close {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+}
+.ws-tab-close:hover { background: var(--luogu-red, #e74c3c); color: #fff; }
+@media print { .workspace-panel, .ws-tabs, .ws-menu { display: none !important; } }

@@ -22,6 +22,12 @@
 (function (global) {
   'use strict';
 
+  // i18n：应用里是真正的翻译函数（src/i18n.js 先于本文件加载）；
+  // 单元测试（node 直接 require 本文件）里它退化成"原样返回 + 插值"。
+  const T = (global.LuoguI18n && global.LuoguI18n.t) || ((s, v) => (v
+    ? String(s).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(v, k) ? v[k] : m))
+    : s));
+
   // Common algorithm names and English acronyms that should NOT be in LaTeX
   const NON_MATH_LATEX_REGEX = /\$(DFS|BFS|Dijkstra|DP|SPFA|Kruskal|Prim|Trie|AC|WA|TLE|MLE|RE|CE|UKE|PC|C\+\+|Python|Java|Pascal|Tarjan|Floyd|Ford|Bellman|LCT|ST|SAM|ACAM)\$/gi;
 
@@ -181,8 +187,8 @@
               issues.push({
                 line: lineNum,
                 type: 'warning',
-                title: '代码块未指定语言',
-                message: '《洛谷题解规范》要求代码块必须声明编程语言（如 ```cpp、```python），未指定时洛谷会默认按 C++ 高亮。',
+                title: T('代码块未指定语言'),
+                message: T('《洛谷题解规范》要求代码块必须声明编程语言（如 ```cpp、```python），未指定时洛谷会默认按 C++ 高亮。'),
                 rule: 'code-language',
                 fixable: true
               });
@@ -203,8 +209,8 @@
           issues.push({
             line: lineNum,
             type: 'warning',
-            title: '洛谷不支持 ++下划线++ 语法',
-            message: '洛谷渲染器基于 GFM，没有 ++ 下划线语法，该写法会原样显示为 ++文字++。如需强调请改用 **加粗** 或 *斜体*。',
+            title: T('洛谷不支持 ++下划线++ 语法'),
+            message: T('洛谷渲染器基于 GFM，没有 ++ 下划线语法，该写法会原样显示为 ++文字++。如需强调请改用 **加粗** 或 *斜体*。'),
             rule: 'unsupported-ins'
           });
         }
@@ -219,8 +225,8 @@
           issues.push({
             line: lineNum,
             type: 'error',
-            title: '包含违规的无意义求过言论',
-            message: '《洛谷题解规范》明确禁止出现闲聊、吐槽、加戏、求赞、求管理员通过、「蒟蒻的第一篇题解」等内容，否则直接拒稿。',
+            title: T('包含违规的无意义求过言论'),
+            message: T('《洛谷题解规范》明确禁止出现闲聊、吐槽、加戏、求赞、求管理员通过、「蒟蒻的第一篇题解」等内容，否则直接拒稿。'),
             rule: 'no-meaningless-text',
             fixable: false
           });
@@ -236,8 +242,8 @@
             issues.push({
               line: lineNum,
               type: 'warning',
-              title: '标题层级跳跃',
-              message: `从 H${lastHeadingLevel} 直接跳到了 H${level}。规范要求标题应对文章结构进行有序引导，不应跳级。`,
+              title: T('标题层级跳跃'),
+              message: T('从 H{a} 直接跳到了 H{b}。规范要求标题应对文章结构进行有序引导，不应跳级。', { a: lastHeadingLevel, b: level }),
               rule: 'heading-hierarchy',
               fixable: false
             });
@@ -256,8 +262,8 @@
           issues.push({
             line: lineNum,
             type: 'warning',
-            title: '非数学公式（算法名/英文单词）误用 LaTeX',
-            message: `《洛谷基本规范第 2 条》规定：非数学公式（一般英文单词、题目名、算法名、人名等）不应使用 LaTeX。应写为 ${nonMathName} 而非 $${nonMathName}$。点击【洛谷排版修复】可一键自动去除 $ 符号。`,
+            title: T('非数学公式（算法名/英文单词）误用 LaTeX'),
+            message: T('《洛谷基本规范第 2 条》规定：非数学公式（一般英文单词、题目名、算法名、人名等）不应使用 LaTeX。应写为 {a} 而非 ${b}$。点击【洛谷排版修复】可一键自动去除 $ 符号。', { a: nonMathName, b: nonMathName }),
             rule: 'non-math-latex',
             fixable: true
           });
@@ -287,8 +293,8 @@
           issues.push({
             line: lineNum,
             type: 'warning',
-            title: '公式中包含中文',
-            message: `《洛谷题解规范》建议：中文一般不要放在 LaTeX 公式中（如 ${sample}）。公式仍会正常渲染。点击【洛谷排版修复】可自动包裹为 $\\text{中文}$。`,
+            title: T('公式中包含中文'),
+            message: T('《洛谷题解规范》建议：中文一般不要放在 LaTeX 公式中（如 {a}）。公式仍会正常渲染。点击【洛谷排版修复】可自动包裹为 $\\\\text{中文}$。', { a: sample }),
             rule: 'cjk-in-math',
             fixable: true
           });
@@ -303,8 +309,8 @@
               issues.push({
                 line: lineNum,
                 type: 'warning',
-                title: '数学公式中乘号使用了星号 *',
-                message: '《洛谷数学公式规范》要求：乘号应使用 $\\times$ 或 $\\cdot$，严禁使用 * 代替乘号。点击【洛谷排版修复】可一键修复。',
+                title: T('数学公式中乘号使用了星号 *'),
+                message: T('《洛谷数学公式规范》要求：乘号应使用 $\\times$ 或 $\\cdot$，严禁使用 * 代替乘号。点击【洛谷排版修复】可一键修复。'),
                 rule: 'math-multiplication-star',
                 fixable: true
               });
@@ -316,8 +322,8 @@
               issues.push({
                 line: lineNum,
                 type: 'warning',
-                title: 'LaTeX 公式中使用了代码运算符',
-                message: '《洛谷数学公式规范》要求公式中使用数学语言而非代码语言：<= 应写为 $\\le$，>= 应写为 $\\ge$，!= 应写为 $\\ne$，-> 应写为 $\\to$，<- 应写为 $\\gets$。点击【洛谷排版修复】可一键自动转换。',
+                title: T('LaTeX 公式中使用了代码运算符'),
+                message: T('《洛谷数学公式规范》要求公式中使用数学语言而非代码语言：<= 应写为 $\\le$，>= 应写为 $\\ge$，!= 应写为 $\\ne$，-> 应写为 $\\to$，<- 应写为 $\\gets$。点击【洛谷排版修复】可一键自动转换。'),
                 rule: 'math-operator-latex',
                 fixable: true
               });
@@ -329,8 +335,8 @@
               issues.push({
                 line: lineNum,
                 type: 'warning',
-                title: '数学公式中乘号使用了星号 *',
-                message: '《洛谷数学公式规范》要求：乘号应使用 $\\times$ 或 $\\cdot$（如 $a \\times b$），严禁使用 * 代替乘号。点击【洛谷排版修复】可一键修复。',
+                title: T('数学公式中乘号使用了星号 *'),
+                message: T('《洛谷数学公式规范》要求：乘号应使用 $\\times$ 或 $\\cdot$（如 $a \\times b$），严禁使用 * 代替乘号。点击【洛谷排版修复】可一键修复。'),
                 rule: 'math-multiplication-star',
                 fixable: true
               });
@@ -342,8 +348,8 @@
               issues.push({
                 line: lineNum,
                 type: 'warning',
-                title: '数学函数或位运算符未按规范使用正体',
-                message: '《洛谷数学公式规范》要求：特定函数名应使用正体（如 $\\gcd, \\max, \\min, \\log, \\det$），未定义函数使用 $\\operatorname{lcm}, \\operatorname{dist}$，位运算使用 $\\operatorname{and}, \\operatorname{or}, \\operatorname{xor}$。点击【洛谷排版修复】可一键修复。',
+                title: T('数学函数或位运算符未按规范使用正体'),
+                message: T('《洛谷数学公式规范》要求：特定函数名应使用正体（如 $\\gcd, \\max, \\min, \\log, \\det$），未定义函数使用 $\\operatorname{lcm}, \\operatorname{dist}$，位运算使用 $\\operatorname{and}, \\operatorname{or}, \\operatorname{xor}$。点击【洛谷排版修复】可一键修复。'),
                 rule: 'math-function-upright',
                 fixable: true
               });
@@ -357,8 +363,8 @@
           issues.push({
             line: lineNum,
             type: 'warning',
-            title: '公式碎拼（割裂）',
-            message: '《洛谷数学公式规范》要求：同一个数学公式应写在同一个 LaTeX 环境内，严禁拆分成多个独立的 $ 包裹（如 $a$ + $b$ 应写为 $a + b$）。',
+            title: T('公式碎拼（割裂）'),
+            message: T('《洛谷数学公式规范》要求：同一个数学公式应写在同一个 LaTeX 环境内，严禁拆分成多个独立的 $ 包裹（如 $a$ + $b$ 应写为 $a + b$）。'),
             rule: 'math-split',
             fixable: false
           });
@@ -371,8 +377,8 @@
             issues.push({
               line: lineNum,
               type: 'warning',
-              title: '中文句子中使用了半角标点符号',
-              message: '《洛谷基本规范第 1 条》明确要求：请正确使用【全角中文】标点符号（如 ，。！？：； 代替英文半角符号）。',
+              title: T('中文句子中使用了半角标点符号'),
+              message: T('《洛谷基本规范第 1 条》明确要求：请正确使用【全角中文】标点符号（如 ，。！？：； 代替英文半角符号）。'),
               rule: 'fullwidth-punctuation',
               fixable: true
             });
@@ -383,8 +389,8 @@
             issues.push({
               line: lineNum,
               type: 'warning',
-              title: '中文句子中使用了英文半角句号 .',
-              message: '《洛谷基本规范第 1 条》明确要求：请使用全角中文标点符号（如用 句号 。 代替英文半角句号 .）。',
+              title: T('中文句子中使用了英文半角句号 .'),
+              message: T('《洛谷基本规范第 1 条》明确要求：请使用全角中文标点符号（如用 句号 。 代替英文半角句号 .）。'),
               rule: 'fullwidth-period',
               fixable: true
             });
@@ -395,8 +401,8 @@
             issues.push({
               line: lineNum,
               type: 'warning',
-              title: '句末使用了英文半角句号 .',
-              message: '《洛谷基本规范第 1 条》明确要求：中文句末请使用全角句号 。 代替英文半角句号 .',
+              title: T('句末使用了英文半角句号 .'),
+              message: T('《洛谷基本规范第 1 条》明确要求：中文句末请使用全角句号 。 代替英文半角句号 .'),
               rule: 'fullwidth-period',
               fixable: true
             });
@@ -428,8 +434,8 @@
           issues.push({
             line: lineNum,
             type: 'info',
-            title: '斜杠 / 两侧缺少空格',
-            message: '《洛谷基本规范第 3 条》要求：中文与英文或不同选项使用斜杠分隔时，两侧应留有半角空格（如 前 / 后、中文 / English）。',
+            title: T('斜杠 / 两侧缺少空格'),
+            message: T('《洛谷基本规范第 3 条》要求：中文与英文、数字或公式（即使包含粗体或斜体修饰，如 “中文 *and* 标点”）之间应以半角空格隔开。'),
             rule: 'slash-spacing',
             fixable: true
           });
@@ -441,8 +447,8 @@
           issues.push({
             line: lineNum,
             type: 'info',
-            title: '中英文间缺少空格（含修饰符）',
-            message: '《洛谷基本规范第 3 条》要求：中文与英文、数字或公式（即使包含粗体或斜体修饰，如 `中文 *and* 标点`）之间应以半角空格隔开。',
+            title: T('中英文间缺少空格（含修饰符）'),
+            message: T('《洛谷基本规范第 3 条》要求：中文与英文、数字或公式（即使包含粗体或斜体修饰，如 `中文 *and* 标点`）之间应以半角空格隔开。'),
             rule: 'cjk-styled-spacing',
             fixable: true
           });
@@ -461,8 +467,8 @@
           issues.push({
             line: lineNum,
             type: 'info',
-            title: '中文标点符号与英文/公式间有多余空格',
-            message: '《洛谷基本规范第 3 条》明确要求：中文标点符号与英文、数字或公式之间【严格严禁有空格】（如 `$n \\le 10^5$，` 正确，`$n \\le 10^5$ ，` 违规）。',
+            title: T('中文标点符号与英文/公式间有多余空格'),
+            message: T('《洛谷基本规范第 3 条》明确要求：中文标点符号与英文、数字或公式之间【严格严禁有空格】（如 `$n \\le 10^5$，` 正确，`$n \\le 10^5$ ，` 违规）。'),
             rule: 'cjk-punct-spacing',
             fixable: true
           });
@@ -477,8 +483,8 @@
           issues.push({
             line: lineNum,
             type: 'info',
-            title: '中英文/公式间缺少空格',
-            message: '《洛谷基本规范第 3 条》要求：中文汉字与英文单词、数字或 LaTeX 公式之间必须以半角空格隔开。',
+            title: T('中英文/公式间缺少空格'),
+            message: T('《洛谷基本规范第 3 条》要求：中文汉字与英文单词、数字或 LaTeX 公式之间必须以半角空格隔开。'),
             rule: 'cjk-spacing',
             fixable: true
           });
@@ -527,8 +533,8 @@
           issues.push({
             line: lastIdx + 1,
             type: 'info',
-            title: '句末缺少句号等标点符号',
-            message: '《洛谷基本规范第 1 条》明确要求：特别地，句末要有【句号】。点击【洛谷排版修复】可自动补全句末句号。',
+            title: T('句末缺少句号等标点符号'),
+            message: T('《洛谷基本规范第 1 条》明确要求：特别地，句末要有【句号】。点击【洛谷排版修复】可自动补全句末句号。'),
             rule: 'missing-end-period',
             fixable: true
           });

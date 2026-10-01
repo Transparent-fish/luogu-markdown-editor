@@ -18,6 +18,11 @@ jobs:
       - name: Run parser test suite
         run: node --test test/
 
+      # 版本号写在三个文件里（tag 决定 Release 资产名，Tauri 又会把版本号烙进安装包），
+      # 不一致时发出来的安装包会标着一个从未存在过的版本号，且没有别的地方会发现。
+      - name: Version numbers must agree
+        run: node scripts/check-versions.js
+
       # `node --test test/` recurses, so a browser suite dropped under test/ would be
       # picked up by this Playwright-less job and fail. Keep those in test-browser/.
       - name: test/ must not require a browser
@@ -141,6 +146,78 @@ jobs:
       # the opened file.
       - name: Workspace behaviour suite
         run: node test-browser/workspace.test.js
+
+      # Long-image export. The capture temporarily mutates the preview pane, so this
+      # guards both the picture (complete, no scrollbars, callouts open) and that the
+      # page is left exactly as it was.
+      - name: Long-image export suite
+        run: node test-browser/export-image.test.js
+
+      # Paging markers drive PDF/print and split the long image. The export mutates
+      # the live preview, so this also guards that it is restored.
+      - name: Pagination suite
+        run: node test-browser/pagination.test.js
+
+      # Layout and print colour: the splitter must survive a drag (flex-shrink used to
+      # collapse it to 0px), single-pane modes must fill the window, NOI-style export
+      # must follow the theme, and the Typora cell editor must not be hard-coded white.
+      - name: Layout and print suite
+        run: node test-browser/layout-print.test.js
+
+      # The settings sub-page: the gear used to open a hover dropdown; now it opens a
+      # modal with 外观 / 语言 / 编辑器, where every choice is a <select> (language and
+      # theme included) plus the desktop-only autosave delay. This guards the entry
+      # point, the dropdowns writing through to real state, and that the web build
+      # hides the disk-only rows. The delay actually changing write timing is covered
+      # in the autosave suite, which has a fake disk.
+      - name: Settings suite
+        run: node test-browser/settings.test.js
+
+      # Bilingual UI, end to end: the browser reports en-US here, so this also pins the
+      # first-run default (follow the system language). It checks the text that is only
+      # produced while rendering — tab labels, status bar, the help manual, the formula
+      # cheatsheet (a load-time array, so switching has to rebuild it) and the lint
+      # report — then switches back to Chinese and checks the choice survives a reload.
+      - name: i18n suite
+        run: node test-browser/i18n.test.js
+
+      # The workspace panel is desktop-only but ships in the same HTML, so this
+      # guards both that it stays invisible in a browser and that it works when a
+      # native filesystem is present (stubbed here — no Rust toolchain needed).
+      - name: Workspace panel suite
+        run: node test-browser/workspace-panel.test.js
+
+      # The file explorer's own suite: icons/indent guides, filter, keyboard
+      # navigation, multi-select, and create/rename/delete/move against a mutable
+      # fake disk — the point being that a menu item has to touch the filesystem,
+      # not just repaint the tree. The move-by-drag cases drive real mouse input,
+      # because tree dragging runs on pointer events rather than HTML5 DnD.
+      - name: File explorer suite
+        run: node test-browser/workspace-explorer.test.js
+
+      # Unsaved-changes dialog, autosave to disk, format-on-save, and the persistence
+      # of theme / view mode / panel width across a reload.
+      - name: Autosave and close-protection suite
+        run: node test-browser/workspace-autosave.test.js
+
+      # Native file drops. The point of this one: a dropped file must carry its
+      # absolute path so Ctrl+S writes back to the original file instead of asking
+      # "save as" — the regression that HTML5 file drops cause.
+      - name: Native drop suite
+        run: node test-browser/workspace-drop.test.js
+
+  # 发布流程本身也得有人看着。workflow 文件里的错误通常要等到打 tag 那一刻才暴露，
+  # 而那正是最不想出岔子的时候；actionlint 会顺带用 shellcheck 检查所有 run: 块，
+  # 上面那几个"产物必须自包含"的校验脚本也在其中。
+  workflows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint the workflow files
+        run: |
+          bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
 
   python:
     runs-on: ubuntu-latest

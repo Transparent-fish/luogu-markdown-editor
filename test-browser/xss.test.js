@@ -43,6 +43,9 @@ const VECTORS = [
   const dialogs=[]; p.on('dialog', d=>{dialogs.push(d.message()); d.dismiss();});
   const errs=[]; p.on('pageerror', e=>errs.push(e.message));
   await p.goto(FILE); await p.waitForTimeout(2600);
+  // 界面语言默认跟随系统（CI 的浏览器报 en-US），而这些用例断言的是中文 UI：
+  // 每次导航后把语言钉回中文，用例只测行为、不测语言。
+  await p.evaluate(()=>{if(window.LuoguI18n)LuoguI18n.setLang('zh');});
 
   let bad=0;
   for (const [name, md] of VECTORS) {
